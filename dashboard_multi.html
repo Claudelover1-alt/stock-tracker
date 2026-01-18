@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#0a0e1a">
+    <title>Stock Tracker</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;800&family=Unbounded:wght@600;900&display=swap" rel="stylesheet">
+    
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        :root {
+            --bg-primary: #0a0e1a;
+            --bg-secondary: #141b2e;
+            --bg-card: #1a2235;
+            --accent-primary: #00ff88;
+            --accent-secondary: #00d4ff;
+            --accent-danger: #ff3366;
+            --accent-warning: #ffaa00;
+            --text-primary: #ffffff;
+            --text-secondary: #8b95b0;
+            --text-muted: #4a5568;
+            --border: rgba(255, 255, 255, 0.1);
+            --glow: rgba(0, 255, 136, 0.3);
+        }
+        
+        body {
+            font-family: 'JetBrains Mono', monospace;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            overflow-x: hidden;
+            position: relative;
+            -webkit-font-smoothing: antialiased;
+        }
+        
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: 
+                radial-gradient(circle at 20% 30%, rgba(0, 212, 255, 0.05) 0%, transparent 50%),
+                radial-gradient(circle at 80% 70%, rgba(0, 255, 136, 0.05) 0%, transparent 50%);
+            animation: pulse 15s ease-in-out infinite;
+            pointer-events: none;
+            z-index: 0;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 0.3; }
+            50% { opacity: 0.6; }
+        }
+        
+        .container {
+            max-width: 100%;
+            padding: 16px;
+            position: relative;
+            z-index: 1;
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 20px;
+            animation: slideDown 0.6s ease-out;
+        }
+        
+        @keyframes slideDown {
+            from { opacity: 0; transform: translateY(-30px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .app-title {
+            font-family: 'Unbounded', sans-serif;
+            font-size: 1.8em;
+            font-weight: 900;
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            letter-spacing: -0.02em;
+            margin-bottom: 8px;
+        }
+        
+        .live-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.7em;
+            color: var(--accent-primary);
+            font-weight: 600;
+        }
+        
+        .live-dot {
+            width: 6px;
+            height: 6px;
+            background: var(--accent-primary);
+            border-radius: 50%;
+            animation: livePulse 2s ease-in-out infinite;
+            box-shadow: 0 0 10px var(--accent-primary);
+        }
+        
+        @keyframes livePulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(0.8); }
+        }
+        
+        .stocks-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 12px;
+            margin-bottom: 60px;
+        }
+        
+        .stock-card {
+            background: var(--bg-card);
+            border: 2px solid var(--border);
+            border-radius: 16px;
+            padding: 16px;
+            position: relative;
+            overflow: hidden;
+            animation: fadeInUp 0.6s ease-out backwards;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .stock-card:hover {
+            border-color: var(--accent-primary);
+            transform: translateY(-2px);
+        }
+        
+        @keyframes fadeInUp {
+            from { opacity: 0; transform: translateY(30px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .stock-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 12px;
+        }
+        
+        .stock-ticker {
+            font-family: 'Unbounded', sans-serif;
+            font-size: 1.5em;
+            font-weight: 900;
+            color: var(--text-primary);
+        }
+        
+        .probability-badge {
+            font-family: 'Unbounded', sans-serif;
+            font-size: 1.3em;
+            font-weight: 900;
+            padding: 6px 12px;
+            border-radius: 10px;
+            border: 2px solid;
+        }
+        
+        .prob-high {
+            background: rgba(0, 255, 136, 0.15);
+            border-color: var(--accent-primary);
+            color: var(--accent-primary);
+        }
+        
+        .prob-medium {
+            background: rgba(255, 170, 0, 0.15);
+            border-color: var(--accent-warning);
+            color: var(--accent-warning);
+        }
+        
+        .prob-low {
+            background: rgba(255, 51, 102, 0.15);
+            border-color: var(--accent-danger);
+            color: var(--accent-danger);
+        }
+        
+        .price-section {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+        
+        .price-box {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 10px;
+        }
+        
+        .price-label {
+            font-size: 0.65em;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--text-muted);
+            margin-bottom: 4px;
+        }
+        
+        .price-value {
+            font-size: 1.2em;
+            font-weight: 800;
+            color: var(--text-primary);
+        }
+        
+        .price-change {
+            font-size: 0.75em;
+            margin-top: 2px;
+        }
+        
+        .positive { color: var(--accent-primary); }
+        .negative { color: var(--accent-danger); }
+        
+        .indicators-mini {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+        }
+        
+        .indicator-mini {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 8px;
+            text-align: center;
+        }
+        
+        .indicator-mini-label {
+            font-size: 0.6em;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 3px;
+        }
+        
+        .indicator-mini-value {
+            font-size: 0.9em;
+            font-weight: 800;
+            color: var(--text-primary);
+        }
+        
+        .expanded-view {
+            display: none;
+            margin-top: 16px;
+            padding-top: 16px;
+            border-top: 1px solid var(--border);
+            animation: expandDown 0.3s ease-out;
+        }
+        
+        @keyframes expandDown {
+            from { opacity: 0; max-height: 0; }
+            to { opacity: 1; max-height: 500px; }
+        }
+        
+        .stock-card.expanded .expanded-view {
+            display: block;
+        }
+        
+        .detail-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        
+        .detail-label {
+            font-size: 0.75em;
+            color: var(--text-secondary);
+        }
+        
+        .detail-value {
+            font-size: 0.75em;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+        
+        .confidence-tag {
+            display: inline-block;
+            padding: 4px 10px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            font-size: 0.65em;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-top: 8px;
+        }
+        
+        .confidence-HIGH {
+            background: rgba(0, 255, 136, 0.2);
+            border-color: var(--accent-primary);
+            color: var(--accent-primary);
+        }
+        
+        .confidence-MEDIUM {
+            background: rgba(255, 170, 0, 0.2);
+            border-color: var(--accent-warning);
+            color: var(--accent-warning);
+        }
+        
+        .confidence-LOW {
+            background: rgba(255, 51, 102, 0.2);
+            border-color: var(--accent-danger);
+            color: var(--accent-danger);
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 60px 20px;
+        }
+        
+        .spinner {
+            width: 50px;
+            height: 50px;
+            margin: 0 auto 20px;
+            border: 3px solid var(--border);
+            border-top-color: var(--accent-primary);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        .error {
+            background: rgba(255, 51, 102, 0.1);
+            border: 1px solid var(--accent-danger);
+            border-radius: 12px;
+            padding: 20px;
+            margin: 20px;
+            text-align: center;
+            color: var(--accent-danger);
+        }
+        
+        .update-time {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: var(--bg-secondary);
+            border-top: 1px solid var(--border);
+            padding: 12px;
+            text-align: center;
+            font-size: 0.7em;
+            color: var(--text-muted);
+            z-index: 100;
+        }
+        
+        .update-time-value {
+            color: var(--text-secondary);
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="app-title">STOCK TRACKER</div>
+            <div class="live-indicator">
+                <div class="live-dot"></div>
+                LIVE UPDATES
+            </div>
+        </div>
+        
+        <div id="app">
+            <div class="loading">
+                <div class="spinner"></div>
+                <div>Loading stocks...</div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="update-time">
+        Last update: <span class="update-time-value" id="updateTime">--:--:--</span>
+    </div>
+    
+    <script>
+        let updateInterval;
+        let expandedStocks = new Set();
+        
+        async function fetchAnalysis() {
+            try {
+                const response = await fetch('/api/analysis');
+                if (!response.ok) throw new Error('Failed to fetch data');
+                const data = await response.json();
+                renderDashboard(data);
+                document.getElementById('updateTime').textContent = new Date(data.timestamp).toLocaleTimeString();
+            } catch (error) {
+                console.error('Error:', error);
+                document.getElementById('app').innerHTML = `
+                    <div class="error">
+                        <h3>Connection Error</h3>
+                        <p>Unable to fetch data. Retrying...</p>
+                    </div>
+                `;
+            }
+        }
+        
+        function getProbabilityClass(prob) {
+            if (prob >= 60) return 'prob-high';
+            if (prob >= 35) return 'prob-medium';
+            return 'prob-low';
+        }
+        
+        function renderStockCard(ticker, data, index) {
+            const prob = data.probability.composite_probability;
+            const probClass = getProbabilityClass(prob);
+            const isExpanded = expandedStocks.has(ticker);
+            
+            const distanceToTarget = data.target_price - data.current_price;
+            const changeClass = distanceToTarget > 0 ? 'positive' : 'negative';
+            
+            return `
+                <div class="stock-card ${isExpanded ? 'expanded' : ''}" 
+                     onclick="toggleExpand('${ticker}')" 
+                     style="animation-delay: ${index * 0.1}s">
+                    
+                    <div class="stock-header">
+                        <div class="stock-ticker">${ticker}</div>
+                        <div class="probability-badge ${probClass}">
+                            ${prob.toFixed(0)}%
+                        </div>
+                    </div>
+                    
+                    <div class="price-section">
+                        <div class="price-box">
+                            <div class="price-label">Current</div>
+                            <div class="price-value">$${data.current_price.toFixed(2)}</div>
+                            <div class="price-change ${changeClass}">
+                                ${data.statistics.return_1d >= 0 ? '+' : ''}${data.statistics.return_1d.toFixed(2)}%
+                            </div>
+                        </div>
+                        <div class="price-box">
+                            <div class="price-label">Target</div>
+                            <div class="price-value">$${data.target_price.toFixed(2)}</div>
+                            <div class="price-change ${changeClass}">
+                                ${distanceToTarget >= 0 ? '+' : ''}$${distanceToTarget.toFixed(2)}
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="indicators-mini">
+                        <div class="indicator-mini">
+                            <div class="indicator-mini-label">RSI</div>
+                            <div class="indicator-mini-value">${data.technical_indicators.rsi.toFixed(0)}</div>
+                        </div>
+                        <div class="indicator-mini">
+                            <div class="indicator-mini-label">MOM</div>
+                            <div class="indicator-mini-value">${data.probability.momentum_score.toFixed(0)}%</div>
+                        </div>
+                        <div class="indicator-mini">
+                            <div class="indicator-mini-label">Vol</div>
+                            <div class="indicator-mini-value">${data.statistics.annual_volatility.toFixed(0)}%</div>
+                        </div>
+                    </div>
+                    
+                    <div class="expanded-view">
+                        <div class="detail-row">
+                            <span class="detail-label">Momentum Score</span>
+                            <span class="detail-value">${data.probability.momentum_score.toFixed(1)}%</span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">Statistical Model</span>
+                            <span class="detail-value">${data.probability.statistical_probability.toFixed(1)}%</span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">Machine Learning</span>
+                            <span class="detail-value">${data.probability.ml_probability.toFixed(1)}%</span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">5-Day Return</span>
+                            <span class="detail-value ${data.statistics.return_5d >= 0 ? 'positive' : 'negative'}">
+                                ${data.statistics.return_5d >= 0 ? '+' : ''}${data.statistics.return_5d.toFixed(2)}%
+                            </span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">20-Day Return</span>
+                            <span class="detail-value ${data.statistics.return_20d >= 0 ? 'positive' : 'negative'}">
+                                ${data.statistics.return_20d >= 0 ? '+' : ''}${data.statistics.return_20d.toFixed(2)}%
+                            </span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">Sharpe Ratio</span>
+                            <span class="detail-value">${data.statistics.sharpe_ratio.toFixed(2)}</span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">ADX (Trend Strength)</span>
+                            <span class="detail-value">${data.technical_indicators.adx.toFixed(1)}</span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">MFI (Money Flow)</span>
+                            <span class="detail-value">${data.technical_indicators.mfi.toFixed(1)}</span>
+                        </div>
+                        
+                        <div class="confidence-tag confidence-${data.probability.confidence_level}">
+                            ${data.probability.confidence_level} Confidence
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+        
+        function toggleExpand(ticker) {
+            if (expandedStocks.has(ticker)) {
+                expandedStocks.delete(ticker);
+            } else {
+                expandedStocks.add(ticker);
+            }
+            fetchAnalysis(); // Re-render
+        }
+        
+        function renderDashboard(data) {
+            const stocks = data.stocks;
+            const tickers = Object.keys(stocks).sort();
+            
+            const html = `
+                <div class="stocks-grid">
+                    ${tickers.map((ticker, index) => renderStockCard(ticker, stocks[ticker], index)).join('')}
+                </div>
+            `;
+            
+            document.getElementById('app').innerHTML = html;
+        }
+        
+        // Initial fetch
+        fetchAnalysis();
+        
+        // Update every second
+        updateInterval = setInterval(fetchAnalysis, 1000);
+        
+        // Cleanup
+        window.addEventListener('beforeunload', () => {
+            clearInterval(updateInterval);
+        });
+    </script>
+</body>
+</html>
