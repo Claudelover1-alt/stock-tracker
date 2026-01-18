@@ -5,4 +5,18 @@ services:
        plan: free
        buildCommand: pip install --upgrade pip && pip install -r requirements.txt
        startCommand: gunicorn --bind 0.0.0.0:$PORT server:app
+```
+   (Change `app:app` to `server:app`)
+5. Click "Commit changes"
+6. Render will auto-redeploy
+
+**Option 2: Edit in Render Dashboard (Faster)**
+
+1. Go to your Render dashboard
+2. Click on your `stock-tracker` service
+3. Click **"Settings"** on the left
+4. Scroll to **"Start Command"**
+5. Change from `gunicorn app:app` to:
+```
+   gunicorn --bind 0.0.0.0:$PORT server:app
        healthCheckPath: /api/health
