@@ -22,40 +22,6 @@ analyzers = {}  # Dict of ticker: StockAnalyzer instance
 update_lock = threading.Lock()
 config = None
 
-# Load configuration and initialize immediately when module is imported
-def initialize_on_import():
-    """Initialize when the module loads"""
-    global config, analyzers, current_analyses
-    
-    if not load_config():
-        print("ERROR: Could not load config. Using default.")
-        # Create a default config
-        config = {
-            "stocks": [
-                {"ticker": "RCAT", "target_price": 20.0, "enabled": True},
-                {"ticker": "AAPL", "target_price": 250.0, "enabled": True}
-            ],
-            "update_interval_seconds": 1,
-            "max_stocks": 6
-        }
-    
-    # Initialize analyzers
-    print("\n" + "="*60)
-    print("MULTI-STOCK ANALYSIS DASHBOARD")
-    print("="*60)
-    initialize_analyzers()
-    
-    # Initialize first analysis
-    initialize_analysis()
-    
-    # Start background update thread
-    update_thread = threading.Thread(target=update_analysis, daemon=True)
-    update_thread.start()
-    print("Background update thread started!")
-
-# Call initialization immediately
-initialize_on_import()
-
 def load_config():
     """Load stock configuration from JSON file"""
     global config
@@ -85,73 +51,6 @@ def initialize_analyzers():
         target = stock['target_price']
         analyzers[ticker] = StockAnalyzer(ticker, target)
         print(f"Initialized analyzer for {ticker} (target: ${target})")
-
-def update_analysis():
-    """Background thread to update analysis every second"""
-    global current_analyses
-    
-    while True:
-        try:
-            for ticker, analyzer in analyzers.items():
-                try:
-                    report = analyzer.generate_analysis_report()
-                    
-                    with update_lock:
-                        current_analyses[ticker] = report
-                    
-                    prob = report['probability']['composite_probability']
-                    print(f"[{datetime.now().strftime('%H:%M:%S')}] {ticker}: ${report['current_price']:.2f} → ${report['target_price']:.2f} | Probability: {prob:.1f}%")
-                    
-                except Exception as e:
-                    print(f"[{datetime.now().strftime('%H:%M:%S')}] Error updating {ticker}: {e}")
-                    # Keep the old data if update fails, don't crash
-        
-        except Exception as e:
-            print(f"Error in update loop: {e}")
-        
-        # Update based on config
-        time.sleep(config.get('update_interval_seconds', 1))
-
-@app.route('/api/analysis')
-def get_analysis():
-    """Get current analysis data for all stocks"""
-    with update_lock:
-        if not current_analyses:
-            return jsonify({'error': 'Analysis not ready yet'}), 503
-        return jsonify({
-            'stocks': current_analyses,
-            'timestamp': datetime.now().isoformat(),
-            'count': len(current_analyses)
-        })
-
-@app.route('/api/analysis/<ticker>')
-def get_stock_analysis(ticker):
-    """Get analysis for a specific stock"""
-    ticker = ticker.upper()
-    with update_lock:
-        if ticker not in current_analyses:
-            return jsonify({'error': f'Stock {ticker} not found'}), 404
-        return jsonify(current_analyses[ticker])
-
-@app.route('/api/config')
-def get_config():
-    """Get current configuration"""
-    return jsonify(config)
-
-@app.route('/api/health')
-def health_check():
-    """Health check endpoint"""
-    return jsonify({
-        'status': 'healthy',
-        'timestamp': datetime.now().isoformat(),
-        'stocks_tracked': len(analyzers)
-    })
-
-@app.route('/')
-def dashboard():
-    """Serve the mobile-optimized dashboard"""
-    html_template = open('dashboard_multi.html', 'r').read()
-    return render_template_string(html_template)
 
 def initialize_analysis():
     """Initialize first analysis before starting server"""
@@ -224,6 +123,106 @@ def initialize_analysis():
         print(f"\nInitial analysis complete for {len(current_analyses)} stock(s)!")
     else:
         print("\nWarning: No stocks could be analyzed. Check network connection and stock tickers.")
+
+def update_analysis():
+    """Background thread to update analysis every second"""
+    global current_analyses
+    
+    while True:
+        try:
+            for ticker, analyzer in analyzers.items():
+                try:
+                    report = analyzer.generate_analysis_report()
+                    
+                    with update_lock:
+                        current_analyses[ticker] = report
+                    
+                    prob = report['probability']['composite_probability']
+                    print(f"[{datetime.now().strftime('%H:%M:%S')}] {ticker}: ${report['current_price']:.2f} → ${report['target_price']:.2f} | Probability: {prob:.1f}%")
+                    
+                except Exception as e:
+                    print(f"[{datetime.now().strftime('%H:%M:%S')}] Error updating {ticker}: {e}")
+                    # Keep the old data if update fails, don't crash
+        
+        except Exception as e:
+            print(f"Error in update loop: {e}")
+        
+        # Update based on config
+        time.sleep(config.get('update_interval_seconds', 1))
+
+def initialize_on_import():
+    """Initialize when the module loads"""
+    global config, analyzers, current_analyses
+    
+    if not load_config():
+        print("ERROR: Could not load config. Using default.")
+        # Create a default config
+        config = {
+            "stocks": [
+                {"ticker": "RCAT", "target_price": 20.0, "enabled": True},
+                {"ticker": "AAPL", "target_price": 250.0, "enabled": True}
+            ],
+            "update_interval_seconds": 1,
+            "max_stocks": 6
+        }
+    
+    # Initialize analyzers
+    print("\n" + "="*60)
+    print("MULTI-STOCK ANALYSIS DASHBOARD")
+    print("="*60)
+    initialize_analyzers()
+    
+    # Initialize first analysis
+    initialize_analysis()
+    
+    # Start background update thread
+    update_thread = threading.Thread(target=update_analysis, daemon=True)
+    update_thread.start()
+    print("Background update thread started!")
+
+# Call initialization immediately when module is imported
+initialize_on_import()
+
+@app.route('/api/analysis')
+def get_analysis():
+    """Get current analysis data for all stocks"""
+    with update_lock:
+        if not current_analyses:
+            return jsonify({'error': 'Analysis not ready yet'}), 503
+        return jsonify({
+            'stocks': current_analyses,
+            'timestamp': datetime.now().isoformat(),
+            'count': len(current_analyses)
+        })
+
+@app.route('/api/analysis/<ticker>')
+def get_stock_analysis(ticker):
+    """Get analysis for a specific stock"""
+    ticker = ticker.upper()
+    with update_lock:
+        if ticker not in current_analyses:
+            return jsonify({'error': f'Stock {ticker} not found'}), 404
+        return jsonify(current_analyses[ticker])
+
+@app.route('/api/config')
+def get_config():
+    """Get current configuration"""
+    return jsonify(config)
+
+@app.route('/api/health')
+def health_check():
+    """Health check endpoint"""
+    return jsonify({
+        'status': 'healthy',
+        'timestamp': datetime.now().isoformat(),
+        'stocks_tracked': len(analyzers)
+    })
+
+@app.route('/')
+def dashboard():
+    """Serve the mobile-optimized dashboard"""
+    html_template = open('dashboard_multi.html', 'r').read()
+    return render_template_string(html_template)
 
 if __name__ == '__main__':
     # Start Flask server
