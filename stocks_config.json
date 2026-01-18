@@ -1,0 +1,36 @@
+{
+  "stocks": [
+    {
+      "ticker": "RCAT",
+      "target_price": 20.00,
+      "enabled": true
+    },
+    {
+      "ticker": "AAPL",
+      "target_price": 250.00,
+      "enabled": true
+    },
+    {
+      "ticker": "TSLA",
+      "target_price": 500.00,
+      "enabled": true
+    },
+    {
+      "ticker": "NVDA",
+      "target_price": 200.00,
+      "enabled": true
+    },
+    {
+      "ticker": "MSFT",
+      "target_price": 500.00,
+      "enabled": true
+    },
+    {
+      "ticker": "GOOGL",
+      "target_price": 200.00,
+      "enabled": true
+    }
+  ],
+  "update_interval_seconds": 1,
+  "max_stocks": 6
+}
