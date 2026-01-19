@@ -151,14 +151,14 @@ class StockAnalyzer:
         indicators['volume_ratio'] = latest['Volume_Ratio']
         
         # Trend signals
-        indicators['trend_signals'] = {
-            'price_above_sma20': self.current_price > latest['SMA_20'],
-            'price_above_sma50': self.current_price > latest['SMA_50'],
-            'price_above_sma200': self.current_price > latest['SMA_200'],
-            'golden_cross': latest['SMA_50'] > latest['SMA_200'],
-            'macd_bullish': latest['MACD'] > latest['MACD_Signal'],
-            'rsi_neutral': 30 < latest['RSI'] < 70,
-            'strong_trend': latest['ADX'] > 25
+         indicators['trend_signals'] = {
+            'price_above_sma20': bool(self.current_price > latest['SMA_20']),
+            'price_above_sma50': bool(self.current_price > latest['SMA_50']),
+            'price_above_sma200': bool(self.current_price > latest['SMA_200']),
+            'golden_cross': bool(latest['SMA_50'] > latest['SMA_200']),
+            'macd_bullish': bool(latest['MACD'] > latest['MACD_Signal']),
+            'rsi_neutral': bool(30 < latest['RSI'] < 70),
+            'strong_trend': bool(latest['ADX'] > 25)
         }
         
         self.technical_df = df
