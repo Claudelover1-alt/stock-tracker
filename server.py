@@ -21,7 +21,7 @@ except Exception as e:
     ANALYZER_AVAILABLE = False
 
 # Create Flask app
-app = Flask(__name__, static_folder='.')
+app = Flask(__name__, static_folder=".")
 CORS(app)
 
 # Temporary debug route to confirm this server.py is live
@@ -74,8 +74,9 @@ def analyze_stocks():
 
                     if report:
                         new_data[ticker] = report
-                        # Use either 'probability' or 'composite_probability' if present
-                        prob = report.get("composite_probability") or report.get("probability", 0.0)
+                        # composite_probability is inside report['probability']
+                        prob_block = report.get("probability", {})
+                        prob = prob_block.get("composite_probability", 0.0)
                         print(f"✓ {ticker}: {prob:.1f}% probability - Success!")
                     else:
                         print(f"✗ {ticker}: Analysis failed - no report generated")
@@ -115,6 +116,18 @@ def analyze_stocks():
             print(f"Error in analysis loop: {e}")
             print(traceback.format_exc())
             time.sleep(10)
+
+
+# Start background analysis thread when the module is imported (works under Gunicorn)
+if ANALYZER_AVAILABLE:
+    try:
+        print("Starting analysis thread at import time")
+        analysis_thread = threading.Thread(target=analyze_stocks, daemon=True)
+        analysis_thread.start()
+    except Exception as e:
+        print(f"Error starting analysis thread: {e}")
+else:
+    print("WARNING: Analysis thread not started - StockAnalyzer not available")
 
 
 @app.route("/")
@@ -240,7 +253,7 @@ def test():
 
 
 # Local development entrypoint only.
-# On Render, use gunicorn server:app as the start command.
+# On Render you keep using: python -m gunicorn server:app --bind 0.0.0.0:$PORT
 if __name__ == "__main__":
     print("\n" + "=" * 60)
     print("STOCK TRACKER SERVER STARTING")
@@ -248,13 +261,7 @@ if __name__ == "__main__":
     print(f"Analyzer available: {ANALYZER_AVAILABLE}")
     print(f"Initial stocks: {list(stock_config.keys())}")
 
-    if ANALYZER_AVAILABLE:
-        analysis_thread = threading.Thread(target=analyze_stocks, daemon=True)
-        analysis_thread.start()
-        print("Analysis thread started")
-    else:
-        print("WARNING: Analysis thread not started - StockAnalyzer not available")
-
+    # For local runs, the thread is already started above if ANALYZER_AVAILABLE is True.
     port = int(os.environ.get("PORT", 5000))
     print(f"Starting Flask on port {port}")
     print("=" * 60 + "\n")
