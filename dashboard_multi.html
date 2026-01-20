@@ -115,6 +115,305 @@
             0%, 100% { opacity: 1; transform: scale(1); }
             50% { opacity: 0.5; transform: scale(0.8); }
         }
+
+        /* Settings Button */
+        .settings-button {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 1000;
+            background: var(--bg-card);
+            border: 2px solid var(--accent-primary);
+            border-radius: 12px;
+            padding: 12px 20px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.9em;
+            font-weight: 600;
+            color: var(--accent-primary);
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 0 20px rgba(0, 255, 136, 0.2);
+        }
+
+        .settings-button:hover {
+            background: var(--accent-primary);
+            color: var(--bg-primary);
+            transform: scale(1.05);
+        }
+
+        /* Settings Modal */
+        .settings-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 2000;
+            backdrop-filter: blur(10px);
+            animation: fadeIn 0.3s ease-out;
+        }
+
+        .settings-modal.active {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        .settings-panel {
+            background: var(--bg-card);
+            border: 2px solid var(--accent-primary);
+            border-radius: 20px;
+            padding: 30px;
+            max-width: 500px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+            animation: slideUp 0.3s ease-out;
+        }
+
+        @keyframes slideUp {
+            from { opacity: 0; transform: translateY(50px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .settings-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 25px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid var(--border);
+        }
+
+        .settings-title {
+            font-family: 'Unbounded', sans-serif;
+            font-size: 1.5em;
+            font-weight: 900;
+            color: var(--accent-primary);
+        }
+
+        .close-button {
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            font-size: 1.5em;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            padding: 5px 10px;
+        }
+
+        .close-button:hover {
+            color: var(--accent-danger);
+            transform: rotate(90deg);
+        }
+
+        .stock-list {
+            margin-bottom: 20px;
+        }
+
+        .stock-item {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 15px;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            animation: fadeInUp 0.3s ease-out;
+        }
+
+        .stock-item-info {
+            flex: 1;
+        }
+
+        .stock-item-ticker {
+            font-family: 'Unbounded', sans-serif;
+            font-size: 1.1em;
+            font-weight: 800;
+            color: var(--text-primary);
+            margin-bottom: 5px;
+        }
+
+        .stock-item-input {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .stock-item-label {
+            font-size: 0.75em;
+            color: var(--text-muted);
+            min-width: 50px;
+        }
+
+        .stock-item-target {
+            background: var(--bg-primary);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 8px 12px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.9em;
+            color: var(--text-primary);
+            width: 120px;
+            transition: all 0.3s ease;
+        }
+
+        .stock-item-target:focus {
+            outline: none;
+            border-color: var(--accent-primary);
+            box-shadow: 0 0 10px rgba(0, 255, 136, 0.3);
+        }
+
+        .delete-stock-btn {
+            background: var(--bg-primary);
+            border: 1px solid var(--accent-danger);
+            border-radius: 8px;
+            padding: 8px 12px;
+            color: var(--accent-danger);
+            font-size: 0.8em;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .delete-stock-btn:hover {
+            background: var(--accent-danger);
+            color: var(--bg-primary);
+        }
+
+        .add-stock-section {
+            background: var(--bg-secondary);
+            border: 2px dashed var(--border);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        .add-stock-title {
+            font-size: 0.9em;
+            font-weight: 600;
+            color: var(--text-secondary);
+            margin-bottom: 15px;
+        }
+
+        .add-stock-form {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .form-row {
+            display: flex;
+            gap: 12px;
+        }
+
+        .form-input {
+            background: var(--bg-primary);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 10px 12px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.9em;
+            color: var(--text-primary);
+            flex: 1;
+            transition: all 0.3s ease;
+        }
+
+        .form-input:focus {
+            outline: none;
+            border-color: var(--accent-primary);
+            box-shadow: 0 0 10px rgba(0, 255, 136, 0.3);
+        }
+
+        .form-input::placeholder {
+            color: var(--text-muted);
+        }
+
+        .add-stock-btn {
+            background: var(--accent-primary);
+            border: none;
+            border-radius: 10px;
+            padding: 12px 20px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.9em;
+            font-weight: 600;
+            color: var(--bg-primary);
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .add-stock-btn:hover {
+            background: var(--accent-secondary);
+            transform: scale(1.05);
+        }
+
+        .settings-footer {
+            border-top: 1px solid var(--border);
+            padding-top: 20px;
+            margin-top: 20px;
+        }
+
+        .save-settings-btn {
+            width: 100%;
+            background: var(--accent-primary);
+            border: none;
+            border-radius: 12px;
+            padding: 15px;
+            font-family: 'Unbounded', sans-serif;
+            font-size: 1em;
+            font-weight: 800;
+            color: var(--bg-primary);
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .save-settings-btn:hover {
+            background: var(--accent-secondary);
+            transform: scale(1.02);
+            box-shadow: 0 5px 20px rgba(0, 255, 136, 0.4);
+        }
+
+        .update-interval-section {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+
+        .update-interval-title {
+            font-size: 0.85em;
+            font-weight: 600;
+            color: var(--text-secondary);
+            margin-bottom: 10px;
+        }
+
+        .interval-input {
+            background: var(--bg-primary);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 10px 12px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.9em;
+            color: var(--text-primary);
+            width: 100%;
+            transition: all 0.3s ease;
+        }
+
+        .interval-input:focus {
+            outline: none;
+            border-color: var(--accent-primary);
+            box-shadow: 0 0 10px rgba(0, 255, 136, 0.3);
+        }
         
         .stocks-grid {
             display: grid;
@@ -370,7 +669,6 @@
             font-weight: 600;
         }
 
-        /* Smooth value transition */
         .value-update {
             animation: valueFlash 0.5s ease-in-out;
         }
@@ -382,6 +680,47 @@
     </style>
 </head>
 <body>
+    <!-- Settings Button -->
+    <button class="settings-button" onclick="openSettings()">⚙️ Settings</button>
+
+    <!-- Settings Modal -->
+    <div class="settings-modal" id="settingsModal">
+        <div class="settings-panel">
+            <div class="settings-header">
+                <div class="settings-title">⚙️ SETTINGS</div>
+                <button class="close-button" onclick="closeSettings()">×</button>
+            </div>
+
+            <!-- Update Interval -->
+            <div class="update-interval-section">
+                <div class="update-interval-title">Update Interval (seconds)</div>
+                <input type="number" id="updateIntervalInput" class="interval-input" min="1" max="60" placeholder="5">
+            </div>
+
+            <!-- Add Stock Section -->
+            <div class="add-stock-section">
+                <div class="add-stock-title">➕ Add New Stock</div>
+                <div class="add-stock-form">
+                    <div class="form-row">
+                        <input type="text" id="newStockTicker" class="form-input" placeholder="Ticker (e.g., AAPL)" style="text-transform: uppercase;">
+                        <input type="number" id="newStockTarget" class="form-input" placeholder="Target Price" step="0.01">
+                    </div>
+                    <button class="add-stock-btn" onclick="addStock()">Add Stock</button>
+                </div>
+            </div>
+
+            <!-- Stock List -->
+            <div class="stock-list" id="stockList">
+                <!-- Stocks will be populated here -->
+            </div>
+
+            <!-- Save Button -->
+            <div class="settings-footer">
+                <button class="save-settings-btn" onclick="saveSettings()">💾 Save & Apply</button>
+            </div>
+        </div>
+    </div>
+
     <div class="container">
         <div class="header">
             <div class="app-title">STOCK TRACKER</div>
@@ -404,23 +743,142 @@
     </div>
     
     <script>
-        // ========================================================================
-        // EASY CONFIGURATION - EDIT THESE VALUES TO CHANGE STOCKS AND TARGETS
-        // ========================================================================
-        const STOCK_CONFIG = {
-            'TSLA': 500.0,    // Tesla - Target: $500
-            'AAPL': 250.0,    // Apple - Target: $250
-            'NVDA': 200.0,    // Nvidia - Target: $200
-            'RCAT': 30.0,     // Red Cat - Target: $30
-            // Add more stocks here in format: 'TICKER': target_price,
+        // Default configuration
+        let STOCK_CONFIG = {
+            'TSLA': 500.0,
+            'AAPL': 250.0,
+            'NVDA': 200.0,
+            'RCAT': 30.0
         };
         
-        const UPDATE_INTERVAL = 5000; // Update every 5 seconds (5000ms)
-        // ========================================================================
+        let UPDATE_INTERVAL = 5000; // 5 seconds
         
         let updateInterval;
         let expandedStocks = new Set();
-        let currentData = null; // Store current data
+        let currentData = null;
+        
+        // Load saved configuration from localStorage
+        function loadConfig() {
+            const savedConfig = localStorage.getItem('stockConfig');
+            const savedInterval = localStorage.getItem('updateInterval');
+            
+            if (savedConfig) {
+                STOCK_CONFIG = JSON.parse(savedConfig);
+            }
+            
+            if (savedInterval) {
+                UPDATE_INTERVAL = parseInt(savedInterval);
+            }
+        }
+        
+        // Save configuration to localStorage
+        function saveConfig() {
+            localStorage.setItem('stockConfig', JSON.stringify(STOCK_CONFIG));
+            localStorage.setItem('updateInterval', UPDATE_INTERVAL.toString());
+        }
+        
+        // Open settings modal
+        function openSettings() {
+            populateStockList();
+            document.getElementById('updateIntervalInput').value = UPDATE_INTERVAL / 1000;
+            document.getElementById('settingsModal').classList.add('active');
+        }
+        
+        // Close settings modal
+        function closeSettings() {
+            document.getElementById('settingsModal').classList.remove('active');
+        }
+        
+        // Populate stock list in settings
+        function populateStockList() {
+            const stockListEl = document.getElementById('stockList');
+            stockListEl.innerHTML = '';
+            
+            Object.keys(STOCK_CONFIG).sort().forEach(ticker => {
+                const targetPrice = STOCK_CONFIG[ticker];
+                const stockItem = document.createElement('div');
+                stockItem.className = 'stock-item';
+                stockItem.innerHTML = `
+                    <div class="stock-item-info">
+                        <div class="stock-item-ticker">${ticker}</div>
+                        <div class="stock-item-input">
+                            <span class="stock-item-label">Target:</span>
+                            <input type="number" 
+                                   class="stock-item-target" 
+                                   value="${targetPrice}" 
+                                   step="0.01"
+                                   data-ticker="${ticker}">
+                        </div>
+                    </div>
+                    <button class="delete-stock-btn" onclick="deleteStock('${ticker}')">🗑️ Delete</button>
+                `;
+                stockListEl.appendChild(stockItem);
+            });
+        }
+        
+        // Add new stock
+        function addStock() {
+            const tickerInput = document.getElementById('newStockTicker');
+            const targetInput = document.getElementById('newStockTarget');
+            
+            const ticker = tickerInput.value.trim().toUpperCase();
+            const target = parseFloat(targetInput.value);
+            
+            if (!ticker) {
+                alert('Please enter a stock ticker');
+                return;
+            }
+            
+            if (!target || target <= 0) {
+                alert('Please enter a valid target price');
+                return;
+            }
+            
+            STOCK_CONFIG[ticker] = target;
+            populateStockList();
+            
+            // Clear inputs
+            tickerInput.value = '';
+            targetInput.value = '';
+        }
+        
+        // Delete stock
+        function deleteStock(ticker) {
+            if (confirm(`Remove ${ticker} from tracking?`)) {
+                delete STOCK_CONFIG[ticker];
+                populateStockList();
+            }
+        }
+        
+        // Save settings and apply
+        function saveSettings() {
+            // Update target prices from inputs
+            document.querySelectorAll('.stock-item-target').forEach(input => {
+                const ticker = input.dataset.ticker;
+                const newTarget = parseFloat(input.value);
+                if (newTarget && newTarget > 0) {
+                    STOCK_CONFIG[ticker] = newTarget;
+                }
+            });
+            
+            // Update interval
+            const intervalSeconds = parseInt(document.getElementById('updateIntervalInput').value);
+            if (intervalSeconds && intervalSeconds > 0) {
+                UPDATE_INTERVAL = intervalSeconds * 1000;
+                
+                // Restart update interval
+                clearInterval(updateInterval);
+                updateInterval = setInterval(fetchAnalysis, UPDATE_INTERVAL);
+            }
+            
+            // Save to localStorage
+            saveConfig();
+            
+            // Close modal and refresh
+            closeSettings();
+            currentData = null; // Force full re-render
+            fetchAnalysis();
+        }
         
         async function fetchAnalysis() {
             try {
@@ -428,15 +886,12 @@
                 if (!response.ok) throw new Error('Failed to fetch data');
                 const data = await response.json();
                 
-                // Update timestamp
                 document.getElementById('updateTime').textContent = new Date(data.timestamp).toLocaleTimeString();
                 
-                // If this is first load, render everything
                 if (currentData === null) {
                     currentData = data;
                     renderDashboard(data);
                 } else {
-                    // Update only changed values
                     updateDashboard(data);
                     currentData = data;
                 }
@@ -476,7 +931,6 @@
                 const prob = stockData.probability.composite_probability;
                 const distanceToTarget = stockData.target_price - stockData.current_price;
                 
-                // Update probability badge
                 updateValue(`prob-${ticker}`, `${prob.toFixed(0)}%`);
                 const probBadge = document.getElementById(`prob-badge-${ticker}`);
                 if (probBadge) {
@@ -484,21 +938,17 @@
                     probBadge.className = `probability-badge ${newClass}`;
                 }
                 
-                // Update current price
                 updateValue(`current-price-${ticker}`, `$${stockData.current_price.toFixed(2)}`);
                 updateValue(`current-change-${ticker}`, 
                     `${stockData.statistics.return_1d >= 0 ? '+' : ''}${stockData.statistics.return_1d.toFixed(2)}%`);
                 
-                // Update target distance
                 updateValue(`target-distance-${ticker}`, 
                     `${distanceToTarget >= 0 ? '+' : ''}$${distanceToTarget.toFixed(2)}`);
                 
-                // Update mini indicators
                 updateValue(`rsi-${ticker}`, stockData.technical_indicators.rsi.toFixed(0));
                 updateValue(`momentum-${ticker}`, `${stockData.probability.momentum_score.toFixed(0)}%`);
                 updateValue(`volatility-${ticker}`, `${stockData.statistics.annual_volatility.toFixed(0)}%`);
                 
-                // Update expanded view if open
                 if (expandedStocks.has(ticker)) {
                     updateValue(`momentum-detail-${ticker}`, `${stockData.probability.momentum_score.toFixed(1)}%`);
                     updateValue(`statistical-detail-${ticker}`, `${stockData.probability.statistical_probability.toFixed(1)}%`);
@@ -509,7 +959,6 @@
                     updateValue(`adx-${ticker}`, stockData.technical_indicators.adx.toFixed(1));
                     updateValue(`mfi-${ticker}`, stockData.technical_indicators.mfi.toFixed(1));
                     
-                    // Update confidence tag
                     const confTag = document.getElementById(`confidence-${ticker}`);
                     if (confTag) {
                         confTag.className = `confidence-tag confidence-${stockData.probability.confidence_level}`;
@@ -626,7 +1075,6 @@
             } else {
                 expandedStocks.add(ticker);
             }
-            // Re-render only this card
             renderDashboard(currentData);
         }
         
@@ -643,6 +1091,9 @@
             document.getElementById('app').innerHTML = html;
         }
         
+        // Load saved config on startup
+        loadConfig();
+        
         // Initial fetch
         fetchAnalysis();
         
@@ -652,6 +1103,13 @@
         // Cleanup
         window.addEventListener('beforeunload', () => {
             clearInterval(updateInterval);
+        });
+
+        // Close modal on outside click
+        document.getElementById('settingsModal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeSettings();
+            }
         });
     </script>
 </body>
