@@ -757,8 +757,8 @@
         let expandedStocks = new Set();
         let currentData = null;
         
-        // Load saved configuration from localStorage
-        function loadConfig() {
+        // Load saved configuration from localStorage and backend
+        async function loadConfig() {
             const savedConfig = localStorage.getItem('stockConfig');
             const savedInterval = localStorage.getItem('updateInterval');
             
@@ -768,6 +768,21 @@
             
             if (savedInterval) {
                 UPDATE_INTERVAL = parseInt(savedInterval);
+            }
+            
+            // Try to load config from backend
+            try {
+                const response = await fetch('/api/config');
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.stocks && Object.keys(data.stocks).length > 0) {
+                        STOCK_CONFIG = data.stocks;
+                        saveConfig(); // Save to localStorage
+                        console.log('Loaded configuration from server:', STOCK_CONFIG);
+                    }
+                }
+            } catch (error) {
+                console.log('Could not load config from server, using local config');
             }
         }
         
@@ -851,7 +866,7 @@
         }
         
         // Save settings and apply
-        function saveSettings() {
+        async function saveSettings() {
             // Update target prices from inputs
             document.querySelectorAll('.stock-item-target').forEach(input => {
                 const ticker = input.dataset.ticker;
@@ -874,10 +889,41 @@
             // Save to localStorage
             saveConfig();
             
+            // Send configuration to backend
+            try {
+                const response = await fetch('/api/config', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        stocks: STOCK_CONFIG
+                    })
+                });
+                
+                if (!response.ok) {
+                    throw new Error('Failed to update server configuration');
+                }
+                
+                const result = await response.json();
+                console.log('Server configuration updated:', result);
+                
+                // Show success message
+                alert('Settings saved! The tracker will update with new stocks shortly.');
+                
+            } catch (error) {
+                console.error('Error updating server config:', error);
+                alert('Settings saved locally, but could not sync with server. Changes will apply on next page load.');
+            }
+            
             // Close modal and refresh
             closeSettings();
             currentData = null; // Force full re-render
-            fetchAnalysis();
+            
+            // Wait a moment for server to start analyzing
+            setTimeout(() => {
+                fetchAnalysis();
+            }, 2000);
         }
         
         async function fetchAnalysis() {
@@ -1091,14 +1137,15 @@
             document.getElementById('app').innerHTML = html;
         }
         
-        // Load saved config on startup
-        loadConfig();
+        // Initialize app
+        async function initApp() {
+            await loadConfig();
+            fetchAnalysis();
+            updateInterval = setInterval(fetchAnalysis, UPDATE_INTERVAL);
+        }
         
-        // Initial fetch
-        fetchAnalysis();
-        
-        // Update at configured interval
-        updateInterval = setInterval(fetchAnalysis, UPDATE_INTERVAL);
+        // Start app
+        initApp();
         
         // Cleanup
         window.addEventListener('beforeunload', () => {
