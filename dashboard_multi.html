@@ -166,6 +166,7 @@
             padding: 6px 12px;
             border-radius: 10px;
             border: 2px solid;
+            transition: all 0.3s ease;
         }
         
         .prob-high {
@@ -212,11 +213,13 @@
             font-size: 1.2em;
             font-weight: 800;
             color: var(--text-primary);
+            transition: all 0.3s ease;
         }
         
         .price-change {
             font-size: 0.75em;
             margin-top: 2px;
+            transition: all 0.3s ease;
         }
         
         .positive { color: var(--accent-primary); }
@@ -248,6 +251,7 @@
             font-size: 0.9em;
             font-weight: 800;
             color: var(--text-primary);
+            transition: all 0.3s ease;
         }
         
         .expanded-view {
@@ -283,6 +287,7 @@
             font-size: 0.75em;
             font-weight: 600;
             color: var(--text-primary);
+            transition: all 0.3s ease;
         }
         
         .confidence-tag {
@@ -296,6 +301,7 @@
             text-transform: uppercase;
             letter-spacing: 0.05em;
             margin-top: 8px;
+            transition: all 0.3s ease;
         }
         
         .confidence-HIGH {
@@ -363,6 +369,16 @@
             color: var(--text-secondary);
             font-weight: 600;
         }
+
+        /* Smooth value transition */
+        .value-update {
+            animation: valueFlash 0.5s ease-in-out;
+        }
+
+        @keyframes valueFlash {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
     </style>
 </head>
 <body>
@@ -388,16 +404,42 @@
     </div>
     
     <script>
+        // ========================================================================
+        // EASY CONFIGURATION - EDIT THESE VALUES TO CHANGE STOCKS AND TARGETS
+        // ========================================================================
+        const STOCK_CONFIG = {
+            'TSLA': 500.0,    // Tesla - Target: $500
+            'AAPL': 250.0,    // Apple - Target: $250
+            'NVDA': 200.0,    // Nvidia - Target: $200
+            'RCAT': 30.0,     // Red Cat - Target: $30
+            // Add more stocks here in format: 'TICKER': target_price,
+        };
+        
+        const UPDATE_INTERVAL = 5000; // Update every 5 seconds (5000ms)
+        // ========================================================================
+        
         let updateInterval;
         let expandedStocks = new Set();
+        let currentData = null; // Store current data
         
         async function fetchAnalysis() {
             try {
                 const response = await fetch('/api/analysis');
                 if (!response.ok) throw new Error('Failed to fetch data');
                 const data = await response.json();
-                renderDashboard(data);
+                
+                // Update timestamp
                 document.getElementById('updateTime').textContent = new Date(data.timestamp).toLocaleTimeString();
+                
+                // If this is first load, render everything
+                if (currentData === null) {
+                    currentData = data;
+                    renderDashboard(data);
+                } else {
+                    // Update only changed values
+                    updateDashboard(data);
+                    currentData = data;
+                }
             } catch (error) {
                 console.error('Error:', error);
                 document.getElementById('app').innerHTML = `
@@ -415,6 +457,68 @@
             return 'prob-low';
         }
         
+        function updateValue(elementId, newValue, addFlash = true) {
+            const element = document.getElementById(elementId);
+            if (element && element.textContent !== newValue) {
+                element.textContent = newValue;
+                if (addFlash) {
+                    element.classList.add('value-update');
+                    setTimeout(() => element.classList.remove('value-update'), 500);
+                }
+            }
+        }
+        
+        function updateDashboard(data) {
+            const stocks = data.stocks;
+            
+            Object.keys(stocks).forEach(ticker => {
+                const stockData = stocks[ticker];
+                const prob = stockData.probability.composite_probability;
+                const distanceToTarget = stockData.target_price - stockData.current_price;
+                
+                // Update probability badge
+                updateValue(`prob-${ticker}`, `${prob.toFixed(0)}%`);
+                const probBadge = document.getElementById(`prob-badge-${ticker}`);
+                if (probBadge) {
+                    const newClass = getProbabilityClass(prob);
+                    probBadge.className = `probability-badge ${newClass}`;
+                }
+                
+                // Update current price
+                updateValue(`current-price-${ticker}`, `$${stockData.current_price.toFixed(2)}`);
+                updateValue(`current-change-${ticker}`, 
+                    `${stockData.statistics.return_1d >= 0 ? '+' : ''}${stockData.statistics.return_1d.toFixed(2)}%`);
+                
+                // Update target distance
+                updateValue(`target-distance-${ticker}`, 
+                    `${distanceToTarget >= 0 ? '+' : ''}$${distanceToTarget.toFixed(2)}`);
+                
+                // Update mini indicators
+                updateValue(`rsi-${ticker}`, stockData.technical_indicators.rsi.toFixed(0));
+                updateValue(`momentum-${ticker}`, `${stockData.probability.momentum_score.toFixed(0)}%`);
+                updateValue(`volatility-${ticker}`, `${stockData.statistics.annual_volatility.toFixed(0)}%`);
+                
+                // Update expanded view if open
+                if (expandedStocks.has(ticker)) {
+                    updateValue(`momentum-detail-${ticker}`, `${stockData.probability.momentum_score.toFixed(1)}%`);
+                    updateValue(`statistical-detail-${ticker}`, `${stockData.probability.statistical_probability.toFixed(1)}%`);
+                    updateValue(`ml-detail-${ticker}`, `${stockData.probability.ml_probability.toFixed(1)}%`);
+                    updateValue(`return5d-${ticker}`, `${stockData.statistics.return_5d >= 0 ? '+' : ''}${stockData.statistics.return_5d.toFixed(2)}%`);
+                    updateValue(`return20d-${ticker}`, `${stockData.statistics.return_20d >= 0 ? '+' : ''}${stockData.statistics.return_20d.toFixed(2)}%`);
+                    updateValue(`sharpe-${ticker}`, stockData.statistics.sharpe_ratio.toFixed(2));
+                    updateValue(`adx-${ticker}`, stockData.technical_indicators.adx.toFixed(1));
+                    updateValue(`mfi-${ticker}`, stockData.technical_indicators.mfi.toFixed(1));
+                    
+                    // Update confidence tag
+                    const confTag = document.getElementById(`confidence-${ticker}`);
+                    if (confTag) {
+                        confTag.className = `confidence-tag confidence-${stockData.probability.confidence_level}`;
+                        confTag.textContent = `${stockData.probability.confidence_level} Confidence`;
+                    }
+                }
+            });
+        }
+        
         function renderStockCard(ticker, data, index) {
             const prob = data.probability.composite_probability;
             const probClass = getProbabilityClass(prob);
@@ -422,6 +526,9 @@
             
             const distanceToTarget = data.target_price - data.current_price;
             const changeClass = distanceToTarget > 0 ? 'positive' : 'negative';
+            const changeClass1d = data.statistics.return_1d >= 0 ? 'positive' : 'negative';
+            const changeClass5d = data.statistics.return_5d >= 0 ? 'positive' : 'negative';
+            const changeClass20d = data.statistics.return_20d >= 0 ? 'positive' : 'negative';
             
             return `
                 <div class="stock-card ${isExpanded ? 'expanded' : ''}" 
@@ -430,23 +537,23 @@
                     
                     <div class="stock-header">
                         <div class="stock-ticker">${ticker}</div>
-                        <div class="probability-badge ${probClass}">
-                            ${prob.toFixed(0)}%
+                        <div class="probability-badge ${probClass}" id="prob-badge-${ticker}">
+                            <span id="prob-${ticker}">${prob.toFixed(0)}%</span>
                         </div>
                     </div>
                     
                     <div class="price-section">
                         <div class="price-box">
                             <div class="price-label">Current</div>
-                            <div class="price-value">$${data.current_price.toFixed(2)}</div>
-                            <div class="price-change ${changeClass}">
+                            <div class="price-value" id="current-price-${ticker}">$${data.current_price.toFixed(2)}</div>
+                            <div class="price-change ${changeClass1d}" id="current-change-${ticker}">
                                 ${data.statistics.return_1d >= 0 ? '+' : ''}${data.statistics.return_1d.toFixed(2)}%
                             </div>
                         </div>
                         <div class="price-box">
                             <div class="price-label">Target</div>
                             <div class="price-value">$${data.target_price.toFixed(2)}</div>
-                            <div class="price-change ${changeClass}">
+                            <div class="price-change ${changeClass}" id="target-distance-${ticker}">
                                 ${distanceToTarget >= 0 ? '+' : ''}$${distanceToTarget.toFixed(2)}
                             </div>
                         </div>
@@ -455,57 +562,57 @@
                     <div class="indicators-mini">
                         <div class="indicator-mini">
                             <div class="indicator-mini-label">RSI</div>
-                            <div class="indicator-mini-value">${data.technical_indicators.rsi.toFixed(0)}</div>
+                            <div class="indicator-mini-value" id="rsi-${ticker}">${data.technical_indicators.rsi.toFixed(0)}</div>
                         </div>
                         <div class="indicator-mini">
                             <div class="indicator-mini-label">MOM</div>
-                            <div class="indicator-mini-value">${data.probability.momentum_score.toFixed(0)}%</div>
+                            <div class="indicator-mini-value" id="momentum-${ticker}">${data.probability.momentum_score.toFixed(0)}%</div>
                         </div>
                         <div class="indicator-mini">
                             <div class="indicator-mini-label">Vol</div>
-                            <div class="indicator-mini-value">${data.statistics.annual_volatility.toFixed(0)}%</div>
+                            <div class="indicator-mini-value" id="volatility-${ticker}">${data.statistics.annual_volatility.toFixed(0)}%</div>
                         </div>
                     </div>
                     
                     <div class="expanded-view">
                         <div class="detail-row">
                             <span class="detail-label">Momentum Score</span>
-                            <span class="detail-value">${data.probability.momentum_score.toFixed(1)}%</span>
+                            <span class="detail-value" id="momentum-detail-${ticker}">${data.probability.momentum_score.toFixed(1)}%</span>
                         </div>
                         <div class="detail-row">
                             <span class="detail-label">Statistical Model</span>
-                            <span class="detail-value">${data.probability.statistical_probability.toFixed(1)}%</span>
+                            <span class="detail-value" id="statistical-detail-${ticker}">${data.probability.statistical_probability.toFixed(1)}%</span>
                         </div>
                         <div class="detail-row">
                             <span class="detail-label">Machine Learning</span>
-                            <span class="detail-value">${data.probability.ml_probability.toFixed(1)}%</span>
+                            <span class="detail-value" id="ml-detail-${ticker}">${data.probability.ml_probability.toFixed(1)}%</span>
                         </div>
                         <div class="detail-row">
                             <span class="detail-label">5-Day Return</span>
-                            <span class="detail-value ${data.statistics.return_5d >= 0 ? 'positive' : 'negative'}">
+                            <span class="detail-value ${changeClass5d}" id="return5d-${ticker}">
                                 ${data.statistics.return_5d >= 0 ? '+' : ''}${data.statistics.return_5d.toFixed(2)}%
                             </span>
                         </div>
                         <div class="detail-row">
                             <span class="detail-label">20-Day Return</span>
-                            <span class="detail-value ${data.statistics.return_20d >= 0 ? 'positive' : 'negative'}">
+                            <span class="detail-value ${changeClass20d}" id="return20d-${ticker}">
                                 ${data.statistics.return_20d >= 0 ? '+' : ''}${data.statistics.return_20d.toFixed(2)}%
                             </span>
                         </div>
                         <div class="detail-row">
                             <span class="detail-label">Sharpe Ratio</span>
-                            <span class="detail-value">${data.statistics.sharpe_ratio.toFixed(2)}</span>
+                            <span class="detail-value" id="sharpe-${ticker}">${data.statistics.sharpe_ratio.toFixed(2)}</span>
                         </div>
                         <div class="detail-row">
                             <span class="detail-label">ADX (Trend Strength)</span>
-                            <span class="detail-value">${data.technical_indicators.adx.toFixed(1)}</span>
+                            <span class="detail-value" id="adx-${ticker}">${data.technical_indicators.adx.toFixed(1)}</span>
                         </div>
                         <div class="detail-row">
                             <span class="detail-label">MFI (Money Flow)</span>
-                            <span class="detail-value">${data.technical_indicators.mfi.toFixed(1)}</span>
+                            <span class="detail-value" id="mfi-${ticker}">${data.technical_indicators.mfi.toFixed(1)}</span>
                         </div>
                         
-                        <div class="confidence-tag confidence-${data.probability.confidence_level}">
+                        <div class="confidence-tag confidence-${data.probability.confidence_level}" id="confidence-${ticker}">
                             ${data.probability.confidence_level} Confidence
                         </div>
                     </div>
@@ -519,7 +626,8 @@
             } else {
                 expandedStocks.add(ticker);
             }
-            fetchAnalysis(); // Re-render
+            // Re-render only this card
+            renderDashboard(currentData);
         }
         
         function renderDashboard(data) {
@@ -538,8 +646,8 @@
         // Initial fetch
         fetchAnalysis();
         
-        // Update every second
-        updateInterval = setInterval(fetchAnalysis, 1000);
+        // Update at configured interval
+        updateInterval = setInterval(fetchAnalysis, UPDATE_INTERVAL);
         
         // Cleanup
         window.addEventListener('beforeunload', () => {
