@@ -9,7 +9,16 @@ import os
 from datetime import datetime
 import threading
 import time
-from stock_analyzer import StockAnalyzer
+import traceback
+
+# Try to import stock analyzer
+try:
+    from stock_analyzer import StockAnalyzer
+    ANALYZER_AVAILABLE = True
+    print("✓ StockAnalyzer imported successfully")
+except Exception as e:
+    print(f"✗ Error importing StockAnalyzer: {e}")
+    ANALYZER_AVAILABLE = False
 
 app = Flask(__name__, static_folder='.')
 CORS(app)
@@ -24,10 +33,17 @@ stock_config = {
 }
 data_lock = threading.Lock()
 last_update = None
+analysis_running = False
 
 def analyze_stocks():
     """Background task to analyze all configured stocks"""
-    global stock_data, last_update
+    global stock_data, last_update, analysis_running
+    
+    if not ANALYZER_AVAILABLE:
+        print("Stock analyzer not available - skipping analysis")
+        return
+    
+    analysis_running = True
     
     while True:
         try:
@@ -37,6 +53,8 @@ def analyze_stocks():
             
             with data_lock:
                 current_config = stock_config.copy()
+            
+            print(f"Configured stocks: {list(current_config.keys())}")
             
             new_data = {}
             
@@ -51,21 +69,24 @@ def analyze_stocks():
                         prob = report['probability']['composite_probability']
                         print(f"✓ {ticker}: {prob:.1f}% probability - Success!")
                     else:
-                        print(f"✗ {ticker}: Analysis failed")
+                        print(f"✗ {ticker}: Analysis failed - no report generated")
                         # Keep old data if available
                         with data_lock:
                             if ticker in stock_data:
                                 new_data[ticker] = stock_data[ticker]
+                                print(f"  Using cached data for {ticker}")
                     
                     # Small delay between stocks to avoid rate limiting
-                    time.sleep(2)
+                    time.sleep(3)
                     
                 except Exception as e:
                     print(f"✗ Error analyzing {ticker}: {e}")
+                    print(traceback.format_exc())
                     # Keep old data if available
                     with data_lock:
                         if ticker in stock_data:
                             new_data[ticker] = stock_data[ticker]
+                            print(f"  Using cached data for {ticker}")
             
             # Update global data
             with data_lock:
@@ -74,6 +95,7 @@ def analyze_stocks():
             
             print(f"\n{'='*60}")
             print(f"Analysis cycle complete: {len(new_data)}/{len(current_config)} stocks updated")
+            print(f"Last update: {last_update.strftime('%H:%M:%S')}")
             print(f"{'='*60}\n")
             
             # Wait 10 seconds before next update cycle
@@ -81,36 +103,60 @@ def analyze_stocks():
             
         except Exception as e:
             print(f"Error in analysis loop: {e}")
+            print(traceback.format_exc())
             time.sleep(10)
 
 @app.route('/')
 def index():
     """Serve the main HTML file"""
-    return send_from_directory('.', 'dashboard_multi.html')
+    try:
+        # Try different possible filenames
+        html_files = ['dashboard_multi.html', 'dashboard_multi_with_settings.html', 'index.html']
+        for filename in html_files:
+            if os.path.exists(filename):
+                print(f"Serving {filename}")
+                return send_from_directory('.', filename)
+        
+        return f"Error: No HTML file found. Looking for: {html_files}", 404
+    except Exception as e:
+        print(f"Error serving index: {e}")
+        return f"Error: {e}", 500
 
 @app.route('/api/analysis')
 def get_analysis():
     """Return current stock analysis data"""
-    with data_lock:
-        if not stock_data:
+    try:
+        with data_lock:
+            print(f"API request - stocks in cache: {list(stock_data.keys())}")
+            
+            # Return data even if empty, so frontend doesn't error out
             return jsonify({
-                'error': 'No data available yet',
-                'timestamp': datetime.now().isoformat(),
-                'stocks': {}
-            }), 503
-        
+                'timestamp': last_update.isoformat() if last_update else datetime.now().isoformat(),
+                'stocks': stock_data,
+                'status': 'analyzing' if not stock_data else 'ready',
+                'analyzer_available': ANALYZER_AVAILABLE,
+                'analysis_running': analysis_running
+            })
+    except Exception as e:
+        print(f"Error in get_analysis: {e}")
+        print(traceback.format_exc())
         return jsonify({
-            'timestamp': last_update.isoformat() if last_update else datetime.now().isoformat(),
-            'stocks': stock_data
-        })
+            'error': str(e),
+            'timestamp': datetime.now().isoformat(),
+            'stocks': {}
+        }), 500
 
 @app.route('/api/config', methods=['GET'])
 def get_config():
     """Return current stock configuration"""
-    with data_lock:
-        return jsonify({
-            'stocks': stock_config
-        })
+    try:
+        with data_lock:
+            return jsonify({
+                'stocks': stock_config
+            })
+    except Exception as e:
+        print(f"Error in get_config: {e}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/config', methods=['POST'])
 def update_config():
@@ -120,6 +166,8 @@ def update_config():
     try:
         data = request.get_json()
         new_config = data.get('stocks', {})
+        
+        print(f"Received config update: {new_config}")
         
         # Validate the configuration
         if not isinstance(new_config, dict):
@@ -151,24 +199,52 @@ def update_config():
         
     except Exception as e:
         print(f"Error updating config: {e}")
+        print(traceback.format_exc())
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/health')
 def health():
     """Health check endpoint"""
-    with data_lock:
-        return jsonify({
-            'status': 'healthy',
-            'stocks_configured': len(stock_config),
-            'stocks_analyzed': len(stock_data),
-            'last_update': last_update.isoformat() if last_update else None
-        })
+    try:
+        with data_lock:
+            return jsonify({
+                'status': 'healthy',
+                'stocks_configured': len(stock_config),
+                'stocks_analyzed': len(stock_data),
+                'last_update': last_update.isoformat() if last_update else None,
+                'analyzer_available': ANALYZER_AVAILABLE,
+                'analysis_running': analysis_running
+            })
+    except Exception as e:
+        print(f"Error in health check: {e}")
+        return jsonify({'status': 'error', 'error': str(e)}), 500
+
+@app.route('/api/test')
+def test():
+    """Simple test endpoint"""
+    return jsonify({
+        'message': 'API is working!',
+        'timestamp': datetime.now().isoformat()
+    })
 
 if __name__ == '__main__':
-    # Start background analysis thread
-    analysis_thread = threading.Thread(target=analyze_stocks, daemon=True)
-    analysis_thread.start()
+    print("\n" + "="*60)
+    print("STOCK TRACKER SERVER STARTING")
+    print("="*60)
+    print(f"Analyzer available: {ANALYZER_AVAILABLE}")
+    print(f"Initial stocks: {list(stock_config.keys())}")
+    
+    # Start background analysis thread only if analyzer is available
+    if ANALYZER_AVAILABLE:
+        analysis_thread = threading.Thread(target=analyze_stocks, daemon=True)
+        analysis_thread.start()
+        print("Analysis thread started")
+    else:
+        print("WARNING: Analysis thread not started - StockAnalyzer not available")
     
     # Run Flask app
     port = int(os.environ.get('PORT', 5000))
+    print(f"Starting Flask on port {port}")
+    print("="*60 + "\n")
+    
     app.run(host='0.0.0.0', port=port, debug=False)
