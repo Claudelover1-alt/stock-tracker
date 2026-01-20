@@ -24,6 +24,11 @@ except Exception as e:
 app = Flask(__name__, static_folder='.')
 CORS(app)
 
+# Temporary debug route to confirm this server.py is live
+@app.route("/ping-debug-123")
+def ping_debug_123():
+    return "PING from *this* server.py", 200
+
 # Global storage for stock data and configuration
 stock_data = {}
 stock_config = {
