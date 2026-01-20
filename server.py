@@ -1,241 +1,174 @@
 """
-Flask Web Server for Multi-Stock Analysis Dashboard
-Provides REST API and serves the mobile-optimized dashboard
-Supports tracking up to 6 stocks simultaneously
+Flask Server for Stock Tracker
+Handles API requests and serves real-time stock analysis
 """
-
-from flask import Flask, jsonify, render_template_string
+from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
-from stock_analyzer import StockAnalyzer
 import json
+import os
+from datetime import datetime
 import threading
 import time
-from datetime import datetime
-import os
+from stock_analyzer import StockAnalyzer
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder='.')
 CORS(app)
 
-# Global state
-current_analyses = {}  # Dict of ticker: analysis_report
-analyzers = {}  # Dict of ticker: StockAnalyzer instance
-update_lock = threading.Lock()
-config = None
+# Global storage for stock data and configuration
+stock_data = {}
+stock_config = {
+    'TSLA': 500.0,
+    'AAPL': 250.0,
+    'NVDA': 200.0,
+    'RCAT': 30.0
+}
+data_lock = threading.Lock()
+last_update = None
 
-def load_config():
-    """Load stock configuration from JSON file"""
-    global config
-    try:
-        with open('stocks_config.json', 'r') as f:
-            config = json.load(f)
-        return True
-    except FileNotFoundError:
-        print("ERROR: stocks_config.json not found!")
-        print("Please run 'python configure_stocks.py' first to set up your stocks.")
-        return False
-    except json.JSONDecodeError:
-        print("ERROR: stocks_config.json is invalid!")
-        return False
-
-def initialize_analyzers():
-    """Initialize analyzers for all enabled stocks"""
-    global analyzers
-    enabled_stocks = [s for s in config['stocks'] if s.get('enabled', True)]
-    
-    if len(enabled_stocks) > config.get('max_stocks', 6):
-        print(f"WARNING: More than {config['max_stocks']} stocks enabled. Using first {config['max_stocks']}.")
-        enabled_stocks = enabled_stocks[:config['max_stocks']]
-    
-    for stock in enabled_stocks:
-        ticker = stock['ticker']
-        target = stock['target_price']
-        analyzers[ticker] = StockAnalyzer(ticker, target)
-        print(f"Initialized analyzer for {ticker} (target: ${target})")
-
-def initialize_analysis():
-    """Initialize first analysis before starting server"""
-    global current_analyses
-    print("Initializing analysis for all stocks...")
-    
-    for ticker, analyzer in analyzers.items():
-        try:
-            print(f"Analyzing {ticker}...")
-            report = analyzer.generate_analysis_report()
-            current_analyses[ticker] = report
-            print(f"✓ {ticker} analysis complete!")
-        except Exception as e:
-            print(f"✗ Error analyzing {ticker}: {e}")
-            # Create a minimal error report so the dashboard can still load
-            current_analyses[ticker] = {
-                'ticker': ticker,
-                'current_price': 0,
-                'target_price': analyzers[ticker].target_price,
-                'distance_to_target': 0,
-                'distance_pct': 0,
-                'probability': {
-                    'composite_probability': 0,
-                    'confidence_level': 'LOW',
-                    'momentum_score': 0,
-                    'statistical_probability': 0,
-                    'ml_probability': 0
-                },
-                'technical_indicators': {
-                    'rsi': 0,
-                    'macd': 0,
-                    'macd_signal': 0,
-                    'stoch_k': 0,
-                    'adx': 0,
-                    'cci': 0,
-                    'mfi': 0,
-                    'williams_r': 0,
-                    'volume_ratio': 0,
-                    'trend_signals': {
-                        'price_above_sma20': False,
-                        'price_above_sma50': False,
-                        'price_above_sma200': False,
-                        'golden_cross': False,
-                        'macd_bullish': False,
-                        'rsi_neutral': False,
-                        'strong_trend': False
-                    }
-                },
-                'statistics': {
-                    'annual_volatility': 0,
-                    'sharpe_ratio': 0,
-                    'sortino_ratio': 0,
-                    'max_drawdown': 0,
-                    'return_1d': 0,
-                    'return_5d': 0,
-                    'return_20d': 0,
-                    'expected_price_median': 0,
-                    'price_range_90': [0, 0]
-                },
-                'machine_learning': {
-                    'probability': 0,
-                    'predicted_return': 0,
-                    'confidence': 'LOW'
-                },
-                'timestamp': datetime.now().isoformat(),
-                'error': str(e)
-            }
-    
-    if current_analyses:
-        print(f"\nInitial analysis complete for {len(current_analyses)} stock(s)!")
-    else:
-        print("\nWarning: No stocks could be analyzed. Check network connection and stock tickers.")
-
-def update_analysis():
-    """Background thread to update analysis every second"""
-    global current_analyses
+def analyze_stocks():
+    """Background task to analyze all configured stocks"""
+    global stock_data, last_update
     
     while True:
         try:
-            for ticker, analyzer in analyzers.items():
+            print(f"\n{'='*60}")
+            print(f"Starting analysis cycle at {datetime.now().strftime('%H:%M:%S')}")
+            print(f"{'='*60}")
+            
+            with data_lock:
+                current_config = stock_config.copy()
+            
+            new_data = {}
+            
+            for ticker, target_price in current_config.items():
                 try:
+                    print(f"\nAnalyzing {ticker} (Target: ${target_price})...")
+                    analyzer = StockAnalyzer(ticker=ticker, target_price=target_price)
                     report = analyzer.generate_analysis_report()
                     
-                    with update_lock:
-                        current_analyses[ticker] = report
+                    if report:
+                        new_data[ticker] = report
+                        prob = report['probability']['composite_probability']
+                        print(f"✓ {ticker}: {prob:.1f}% probability - Success!")
+                    else:
+                        print(f"✗ {ticker}: Analysis failed")
+                        # Keep old data if available
+                        with data_lock:
+                            if ticker in stock_data:
+                                new_data[ticker] = stock_data[ticker]
                     
-                    prob = report['probability']['composite_probability']
-                    print(f"[{datetime.now().strftime('%H:%M:%S')}] {ticker}: ${report['current_price']:.2f} → ${report['target_price']:.2f} | Probability: {prob:.1f}%")
+                    # Small delay between stocks to avoid rate limiting
+                    time.sleep(2)
                     
                 except Exception as e:
-                    print(f"[{datetime.now().strftime('%H:%M:%S')}] Error updating {ticker}: {e}")
-                    # Keep the old data if update fails, don't crash
-        
+                    print(f"✗ Error analyzing {ticker}: {e}")
+                    # Keep old data if available
+                    with data_lock:
+                        if ticker in stock_data:
+                            new_data[ticker] = stock_data[ticker]
+            
+            # Update global data
+            with data_lock:
+                stock_data = new_data
+                last_update = datetime.now()
+            
+            print(f"\n{'='*60}")
+            print(f"Analysis cycle complete: {len(new_data)}/{len(current_config)} stocks updated")
+            print(f"{'='*60}\n")
+            
+            # Wait 10 seconds before next update cycle
+            time.sleep(10)
+            
         except Exception as e:
-            print(f"Error in update loop: {e}")
-        
-        # Update based on config
-        time.sleep(config.get('update_interval_seconds', 1))
+            print(f"Error in analysis loop: {e}")
+            time.sleep(10)
 
-def initialize_on_import():
-    """Initialize when the module loads"""
-    global config, analyzers, current_analyses
-    
-    if not load_config():
-        print("ERROR: Could not load config. Using default.")
-        # Create a default config
-        config = {
-            "stocks": [
-                {"ticker": "RCAT", "target_price": 20.0, "enabled": True},
-                {"ticker": "AAPL", "target_price": 250.0, "enabled": True}
-            ],
-            "update_interval_seconds": 1,
-            "max_stocks": 6
-        }
-    
-    # Initialize analyzers
-    print("\n" + "="*60)
-    print("MULTI-STOCK ANALYSIS DASHBOARD")
-    print("="*60)
-    initialize_analyzers()
-    
-    # Initialize first analysis
-    initialize_analysis()
-    
-    # Start background update thread
-    update_thread = threading.Thread(target=update_analysis, daemon=True)
-    update_thread.start()
-    print("Background update thread started!")
-
-# Call initialization immediately when module is imported
-initialize_on_import()
+@app.route('/')
+def index():
+    """Serve the main HTML file"""
+    return send_from_directory('.', 'dashboard_multi.html')
 
 @app.route('/api/analysis')
 def get_analysis():
-    """Get current analysis data for all stocks"""
-    with update_lock:
-        if not current_analyses:
-            return jsonify({'error': 'Analysis not ready yet'}), 503
+    """Return current stock analysis data"""
+    with data_lock:
+        if not stock_data:
+            return jsonify({
+                'error': 'No data available yet',
+                'timestamp': datetime.now().isoformat(),
+                'stocks': {}
+            }), 503
+        
         return jsonify({
-            'stocks': current_analyses,
-            'timestamp': datetime.now().isoformat(),
-            'count': len(current_analyses)
+            'timestamp': last_update.isoformat() if last_update else datetime.now().isoformat(),
+            'stocks': stock_data
         })
 
-@app.route('/api/analysis/<ticker>')
-def get_stock_analysis(ticker):
-    """Get analysis for a specific stock"""
-    ticker = ticker.upper()
-    with update_lock:
-        if ticker not in current_analyses:
-            return jsonify({'error': f'Stock {ticker} not found'}), 404
-        return jsonify(current_analyses[ticker])
-
-@app.route('/api/config')
+@app.route('/api/config', methods=['GET'])
 def get_config():
-    """Get current configuration"""
-    return jsonify(config)
+    """Return current stock configuration"""
+    with data_lock:
+        return jsonify({
+            'stocks': stock_config
+        })
+
+@app.route('/api/config', methods=['POST'])
+def update_config():
+    """Update stock configuration"""
+    global stock_config
+    
+    try:
+        data = request.get_json()
+        new_config = data.get('stocks', {})
+        
+        # Validate the configuration
+        if not isinstance(new_config, dict):
+            return jsonify({'error': 'Invalid configuration format'}), 400
+        
+        for ticker, target in new_config.items():
+            if not isinstance(ticker, str) or not isinstance(target, (int, float)):
+                return jsonify({'error': f'Invalid data for {ticker}'}), 400
+            if target <= 0:
+                return jsonify({'error': f'Target price must be positive for {ticker}'}), 400
+        
+        # Update configuration
+        with data_lock:
+            stock_config = new_config
+            # Clear old data for removed stocks
+            stocks_to_remove = [t for t in stock_data.keys() if t not in stock_config]
+            for ticker in stocks_to_remove:
+                del stock_data[ticker]
+        
+        print(f"\n{'='*60}")
+        print(f"Configuration updated:")
+        print(f"New stocks: {list(new_config.keys())}")
+        print(f"{'='*60}\n")
+        
+        return jsonify({
+            'success': True,
+            'stocks': stock_config
+        })
+        
+    except Exception as e:
+        print(f"Error updating config: {e}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/health')
-def health_check():
+def health():
     """Health check endpoint"""
-    return jsonify({
-        'status': 'healthy',
-        'timestamp': datetime.now().isoformat(),
-        'stocks_tracked': len(analyzers)
-    })
-
-@app.route('/')
-def dashboard():
-    """Serve the mobile-optimized dashboard"""
-    html_template = open('dashboard_multi.html', 'r').read()
-    return render_template_string(html_template)
+    with data_lock:
+        return jsonify({
+            'status': 'healthy',
+            'stocks_configured': len(stock_config),
+            'stocks_analyzed': len(stock_data),
+            'last_update': last_update.isoformat() if last_update else None
+        })
 
 if __name__ == '__main__':
-    # Start Flask server
-    print("\n" + "="*60)
-    print("Dashboard Server Starting...")
-    print("="*60)
-    print("Dashboard: http://localhost:5000")
-    print("API: http://localhost:5000/api/analysis")
-    print(f"\nTracking {len(analyzers)} stock(s) with second-by-second updates")
-    print("\nTo access from iPhone:")
-    print("1. Find your computer's IP address")
-    print("2. Open Safari on iPhone and go to http://[YOUR_IP]:5000")
-    print("3. Tap 'Share' button and 'Add to Home Screen'")
-    print("="*60 + "\n")
+    # Start background analysis thread
+    analysis_thread = threading.Thread(target=analyze_stocks, daemon=True)
+    analysis_thread.start()
     
-    app.run(host='0.0.0.0', port=5000, debug=False)
+    # Run Flask app
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port, debug=False)
