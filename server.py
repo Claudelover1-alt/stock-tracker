@@ -148,122 +148,45 @@ def index():
 
 @app.route("/api/analysis")
 def get_analysis():
-    """Return current stock analysis data"""
+    """Return current stock analysis data - FRONTEND COMPATIBLE FORMAT"""
     try:
         with data_lock:
             print(f"API request - stocks in cache: {list(stock_data.keys())}")
-            return jsonify(
-                {
-                    "timestamp": last_update.isoformat() if last_update else datetime.now().isoformat(),
-                    "stocks": stock_data,
-                    "status": "analyzing" if not stock_data else "ready",
-                    "analyzer_available": ANALYZER_AVAILABLE,
-                    "analysis_running": analysis_running,
-                }
-            )
+            
+            # Frontend expects FLAT array of stocks, not nested object
+            if stock_data:
+                # Flatten: convert stocks[ticker] → stocks[{ticker, probability, ...}]
+                all_stocks = []
+                for ticker, report in stock_data.items():
+                    flat_report = {
+                        'ticker': ticker,
+                        'current_price': report.get('current_price', 0),
+                        'target_price': report.get('target_price', 0),
+                        'distance_to_target': report.get('distance_to_target', 0),
+                        'distance_pct': report.get('distance_pct', 0),
+                        'probability': report.get('probability', {}).get('composite_probability', 0),
+                        'rsi': report.get('technical_indicators', {}).get('rsi', 50),
+                        'confidence': report.get('probability', {}).get('confidence_level', 'LOW'),
+                        'status': 'ready'
+                    }
+                    all_stocks.append(flat_report)
+                
+                return jsonify({
+                    'timestamp': last_update.isoformat() if last_update else datetime.now().isoformat(),
+                    'stocks': all_stocks,  # Array format frontend expects
+                    'status': 'ready',
+                    'analyzer_available': ANALYZER_AVAILABLE,
+                    'analysis_running': analysis_running,
+                })
+            else:
+                # During startup, return loading state with empty array (not empty object)
+                return jsonify({
+                    'timestamp': datetime.now().isoformat(),
+                    'stocks': [],  # Empty ARRAY, not empty object
+                    'status': 'loading',  # Frontend-friendly status
+                    'analyzer_available': ANALYZER_AVAILABLE,
+                    'analysis_running': analysis_running,
+                })
     except Exception as e:
         print(f"Error in get_analysis: {e}")
-        print(traceback.format_exc())
-        return jsonify(
-            {
-                "error": str(e),
-                "timestamp": datetime.now().isoformat(),
-                "stocks": {},
-            }
-        ), 500
-
-
-@app.route("/api/config", methods=["GET"])
-def get_config():
-    """Return current stock configuration"""
-    try:
-        with data_lock:
-            return jsonify({"stocks": stock_config})
-    except Exception as e:
-        print(f"Error in get_config: {e}")
-        return jsonify({"error": str(e)}), 500
-
-
-@app.route("/api/config", methods=["POST"])
-def update_config():
-    """Update stock configuration"""
-    global stock_config
-
-    try:
-        data = request.get_json() or {}
-        new_config = data.get("stocks", {})
-
-        print(f"Received config update: {new_config}")
-
-        # Validate the configuration
-        if not isinstance(new_config, dict):
-            return jsonify({"error": "Invalid configuration format"}), 400
-
-        for ticker, target in new_config.items():
-            if not isinstance(ticker, str) or not isinstance(target, (int, float)):
-                return jsonify({"error": f"Invalid data for {ticker}"}), 400
-            if target <= 0:
-                return jsonify({"error": f"Target price must be positive for {ticker}"}), 400
-
-        # Update configuration
-        with data_lock:
-            stock_config = new_config
-
-            # Clear old data for removed stocks
-            stocks_to_remove = [t for t in list(stock_data.keys()) if t not in stock_config]
-            for ticker in stocks_to_remove:
-                del stock_data[ticker]
-
-        print("\n" + "=" * 60)
-        print("Configuration updated:")
-        print(f"New stocks: {list(new_config.keys())}")
-        print("=" * 60 + "\n")
-
-        return jsonify({"success": True, "stocks": stock_config})
-    except Exception as e:
-        print(f"Error updating config: {e}")
-        print(traceback.format_exc())
-        return jsonify({"error": str(e)}), 500
-
-
-@app.route("/api/health")
-def health():
-    """Health check endpoint"""
-    try:
-        with data_lock:
-            return jsonify(
-                {
-                    "status": "healthy",
-                    "stocks_configured": len(stock_config),
-                    "stocks_analyzed": len(stock_data),
-                    "last_update": last_update.isoformat() if last_update else None,
-                    "analyzer_available": ANALYZER_AVAILABLE,
-                    "analysis_running": analysis_running,
-                }
-            )
-    except Exception as e:
-        print(f"Error in health check: {e}")
-        return jsonify({"status": "error", "error": str(e)}), 500
-
-
-@app.route("/api/test")
-def test():
-    """Simple test endpoint"""
-    return jsonify({"message": "API is working!", "timestamp": datetime.now().isoformat()})
-
-
-# Local development entrypoint only.
-# On Render you keep using: python -m gunicorn server:app --bind 0.0.0.0:$PORT
-if __name__ == "__main__":
-    print("\n" + "=" * 60)
-    print("STOCK TRACKER SERVER STARTING")
-    print("=" * 60)
-    print(f"Analyzer available: {ANALYZER_AVAILABLE}")
-    print(f"Initial stocks: {list(stock_config.keys())}")
-
-    # For local runs, the thread is already started above if ANALYZER_AVAILABLE is True.
-    port = int(os.environ.get("PORT", 5000))
-    print(f"Starting Flask on port {port}")
-    print("=" * 60 + "\n")
-
-    app.run(host="0.0.0.0", port=port, debug=False)
+        print(traceback.format_ex
