@@ -64,10 +64,9 @@ def analyze_single_stock(ticker, target_price):
                 "macd": 1.23,
                 "sma20": current_price * 0.98,
                 "sma50": current_price * 0.97,
-                "adx": 25.0,  # Added to match frontend expectation
-                "mfi": 50.0   # Added to match frontend expectation for Money Flow Index
+                "adx": 25.0,  # Matches frontend expectation
+                "mfi": 50.0   # Matches frontend expectation for Money Flow Index
             },
-            # *** FIXES ERROR 1024/989 ***
             "statistics": {
                 "return_1d": 1.2,
                 "return_5d": 3.8,
@@ -96,7 +95,7 @@ def analyze_single_stock(ticker, target_price):
                 "ml_probability": 0.0,
                 "confidence_level": "LOW"
             },
-            "technical_indicators": {  # Added full dict to prevent undefined errors
+            "technical_indicators": {  # Full dict to prevent undefined errors
                 "rsi": 0.0,
                 "macd": 0.0,
                 "sma20": 0.0,
