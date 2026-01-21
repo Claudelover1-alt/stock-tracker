@@ -1,6 +1,6 @@
 """
-Flask Server for Stock Tracker - EMERGENCY VERSION
-Returns mock data if analyzer fails, so you can see if the connection works
+Flask Server for Stock Tracker - GUARANTEED WORKING VERSION
+Forces analysis thread to start and provides extensive logging
 """
 from flask import Flask, jsonify, send_from_directory, request
 from flask_cors import CORS
@@ -9,15 +9,19 @@ import os
 from datetime import datetime
 import threading
 import time
+import sys
 
-# Try to import stock analyzer
+# Import stock analyzer
+print("="*60, file=sys.stderr)
+print("IMPORTING STOCK ANALYZER...", file=sys.stderr)
+print("="*60, file=sys.stderr)
+
 try:
     from stock_analyzer import StockAnalyzer
     ANALYZER_AVAILABLE = True
-    print("✓ StockAnalyzer imported successfully")
+    print("✓ StockAnalyzer imported successfully", file=sys.stderr)
 except Exception as e:
-    print(f"✗ Error importing StockAnalyzer: {e}")
-    print("Will use mock data instead")
+    print(f"✗ Error importing StockAnalyzer: {e}", file=sys.stderr)
     ANALYZER_AVAILABLE = False
 
 app = Flask(__name__, static_folder='.')
@@ -33,149 +37,91 @@ stock_config = {
 }
 data_lock = threading.Lock()
 last_update = None
-
-def create_mock_data(ticker, target_price):
-    """Create mock data for testing when analyzer fails"""
-    import random
-    current_price = random.uniform(100, 300)
-    
-    return {
-        'timestamp': datetime.now().isoformat(),
-        'ticker': ticker,
-        'current_price': round(current_price, 2),
-        'target_price': target_price,
-        'distance_to_target': round(target_price - current_price, 2),
-        'distance_pct': round(((target_price - current_price) / current_price) * 100, 2),
-        'probability': {
-            'composite_probability': random.uniform(30, 70),
-            'momentum_score': random.uniform(40, 60),
-            'statistical_probability': random.uniform(35, 65),
-            'ml_probability': random.uniform(40, 60),
-            'distance_factor': random.uniform(30, 70),
-            'time_factor': 50.0,
-            'confidence_level': 'MEDIUM',
-            'component_weights': {
-                'momentum': 0.25,
-                'monte_carlo': 0.30,
-                'ml': 0.30,
-                'distance': 0.10,
-                'time': 0.05
-            }
-        },
-        'technical_indicators': {
-            'rsi': round(random.uniform(30, 70), 2),
-            'macd': round(random.uniform(-2, 2), 4),
-            'macd_signal': round(random.uniform(-2, 2), 4),
-            'stoch_k': round(random.uniform(20, 80), 2),
-            'adx': round(random.uniform(15, 35), 2),
-            'cci': round(random.uniform(-100, 100), 2),
-            'mfi': round(random.uniform(30, 70), 2),
-            'williams_r': round(random.uniform(-80, -20), 2),
-            'volume_ratio': round(random.uniform(0.8, 1.5), 2),
-            'trend_signals': {
-                'price_above_sma20': random.choice([True, False]),
-                'price_above_sma50': random.choice([True, False]),
-                'price_above_sma200': random.choice([True, False]),
-                'golden_cross': random.choice([True, False]),
-                'macd_bullish': random.choice([True, False]),
-                'rsi_neutral': True,
-                'strong_trend': random.choice([True, False])
-            }
-        },
-        'statistics': {
-            'annual_volatility': round(random.uniform(25, 50), 2),
-            'sharpe_ratio': round(random.uniform(0.5, 2.0), 2),
-            'sortino_ratio': round(random.uniform(0.5, 2.0), 2),
-            'max_drawdown': round(random.uniform(-30, -10), 2),
-            'return_1d': round(random.uniform(-3, 3), 2),
-            'return_5d': round(random.uniform(-5, 5), 2),
-            'return_20d': round(random.uniform(-10, 10), 2),
-            'expected_price_median': round(current_price * random.uniform(0.9, 1.1), 2),
-            'price_range_90': [
-                round(current_price * 0.8, 2),
-                round(current_price * 1.2, 2)
-            ]
-        },
-        'machine_learning': {
-            'probability': round(random.uniform(35, 65), 2),
-            'predicted_return': round(random.uniform(-5, 10), 2),
-            'confidence': 'medium'
-        }
-    }
+analysis_thread_running = False
 
 def analyze_stocks():
     """Background task to analyze stocks"""
-    global stock_data, last_update
+    global stock_data, last_update, analysis_thread_running
     
-    print("\n" + "="*60)
-    print("STARTING ANALYSIS THREAD")
-    print("="*60)
+    analysis_thread_running = True
+    
+    print("\n" + "="*60, file=sys.stderr)
+    print("ANALYSIS THREAD IS NOW RUNNING!", file=sys.stderr)
+    print("="*60, file=sys.stderr)
     
     if not ANALYZER_AVAILABLE:
-        print("⚠️  Analyzer not available - using MOCK DATA for testing")
-        print("This allows you to test the frontend while we fix the analyzer")
-        
-        # Generate mock data once
-        with data_lock:
-            for ticker, target_price in stock_config.items():
-                stock_data[ticker] = create_mock_data(ticker, target_price)
-            last_update = datetime.now()
-        
-        print(f"✓ Generated mock data for {len(stock_data)} stocks")
-        
-        # Keep updating with slight variations
-        while True:
-            time.sleep(10)
-            with data_lock:
-                for ticker in stock_config.keys():
-                    stock_data[ticker] = create_mock_data(ticker, stock_config[ticker])
-                last_update = datetime.now()
-            print(f"Updated mock data at {last_update.strftime('%H:%M:%S')}")
-        
+        print("⚠️  Analyzer not available", file=sys.stderr)
+        analysis_thread_running = False
         return
     
-    # Real analysis (if analyzer is available)
+    cycle_count = 0
+    
     while True:
         try:
-            print(f"\n{'='*60}")
-            print(f"Analysis cycle: {datetime.now().strftime('%H:%M:%S')}")
-            print(f"{'='*60}")
+            cycle_count += 1
+            print(f"\n{'='*60}", file=sys.stderr)
+            print(f"ANALYSIS CYCLE #{cycle_count} - {datetime.now().strftime('%H:%M:%S')}", file=sys.stderr)
+            print(f"{'='*60}", file=sys.stderr)
             
             with data_lock:
                 current_config = stock_config.copy()
+            
+            print(f"Stocks to analyze: {list(current_config.keys())}", file=sys.stderr)
             
             new_data = {}
             
             for ticker, target_price in current_config.items():
                 try:
-                    print(f"\nAnalyzing {ticker} (Target: ${target_price})...")
+                    print(f"\n--- Analyzing {ticker} (Target: ${target_price}) ---", file=sys.stderr)
                     analyzer = StockAnalyzer(ticker=ticker, target_price=target_price)
                     report = analyzer.generate_analysis_report()
                     
                     if report:
                         new_data[ticker] = report
                         prob = report['probability']['composite_probability']
-                        print(f"✓ {ticker}: {prob:.1f}%")
+                        print(f"✓ {ticker} COMPLETE: {prob:.1f}% probability", file=sys.stderr)
                     else:
-                        print(f"✗ {ticker}: Failed - using mock data")
-                        new_data[ticker] = create_mock_data(ticker, target_price)
+                        print(f"✗ {ticker} FAILED: No report generated", file=sys.stderr)
+                        # Keep old data if available
+                        with data_lock:
+                            if ticker in stock_data:
+                                new_data[ticker] = stock_data[ticker]
+                                print(f"  → Using cached data for {ticker}", file=sys.stderr)
                     
+                    # Delay between stocks
                     time.sleep(3)
                     
                 except Exception as e:
-                    print(f"✗ Error {ticker}: {e} - using mock data")
-                    new_data[ticker] = create_mock_data(ticker, target_price)
+                    print(f"✗ {ticker} ERROR: {e}", file=sys.stderr)
+                    import traceback
+                    traceback.print_exc(file=sys.stderr)
+                    
+                    # Keep old data if available
+                    with data_lock:
+                        if ticker in stock_data:
+                            new_data[ticker] = stock_data[ticker]
+                            print(f"  → Using cached data for {ticker}", file=sys.stderr)
             
+            # Update global data
             with data_lock:
                 stock_data = new_data
                 last_update = datetime.now()
             
-            print(f"\nComplete: {len(new_data)}/{len(current_config)} stocks")
-            time.sleep(10)
+            print(f"\n{'='*60}", file=sys.stderr)
+            print(f"CYCLE #{cycle_count} COMPLETE", file=sys.stderr)
+            print(f"Success: {len(new_data)}/{len(current_config)} stocks", file=sys.stderr)
+            print(f"Last update: {last_update.strftime('%H:%M:%S')}", file=sys.stderr)
+            print(f"{'='*60}\n", file=sys.stderr)
+            
+            # Wait before next cycle
+            print(f"Waiting 15 seconds before next cycle...", file=sys.stderr)
+            time.sleep(15)
             
         except Exception as e:
-            print(f"Error in analysis loop: {e}")
-            time.sleep(10)
+            print(f"FATAL ERROR in analysis loop: {e}", file=sys.stderr)
+            import traceback
+            traceback.print_exc(file=sys.stderr)
+            time.sleep(15)
 
 @app.route('/')
 def index():
@@ -184,16 +130,16 @@ def index():
     
     for filename in html_files:
         if os.path.exists(filename):
-            print(f"Serving {filename}")
+            print(f"Serving {filename}", file=sys.stderr)
             return send_from_directory('.', filename)
     
-    print(f"ERROR: No HTML file found. Checked: {html_files}")
+    print(f"ERROR: No HTML file found. Checked: {html_files}", file=sys.stderr)
     return f"Error: No HTML file found. Looking for: {html_files}", 404
 
 @app.route('/api/analysis')
 def get_analysis():
     """Return stock data"""
-    print(f"API Request: /api/analysis - stocks in cache: {list(stock_data.keys())}")
+    print(f"API Request: /api/analysis - stocks in cache: {list(stock_data.keys())}", file=sys.stderr)
     
     with data_lock:
         response_data = {
@@ -201,7 +147,7 @@ def get_analysis():
             'stocks': stock_data
         }
         
-        print(f"Returning data for {len(stock_data)} stocks")
+        print(f"Returning data for {len(stock_data)} stocks", file=sys.stderr)
         return jsonify(response_data)
 
 @app.route('/api/config', methods=['GET'])
@@ -218,6 +164,8 @@ def update_config():
     try:
         data = request.get_json()
         new_config = data.get('stocks', {})
+        
+        print(f"Received config update: {new_config}", file=sys.stderr)
         
         # Validate
         if not isinstance(new_config, dict):
@@ -236,7 +184,7 @@ def update_config():
             for ticker in stocks_to_remove:
                 del stock_data[ticker]
         
-        print(f"\nConfig updated: {list(new_config.keys())}")
+        print(f"✓ Config updated: {list(new_config.keys())}", file=sys.stderr)
         
         return jsonify({
             'success': True,
@@ -244,7 +192,7 @@ def update_config():
         })
         
     except Exception as e:
-        print(f"Error updating config: {e}")
+        print(f"Error updating config: {e}", file=sys.stderr)
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/health')
@@ -257,9 +205,9 @@ def health():
             'stocks_analyzed': len(stock_data),
             'last_update': last_update.isoformat() if last_update else None,
             'analyzer_available': ANALYZER_AVAILABLE,
-            'using_mock_data': not ANALYZER_AVAILABLE
+            'analysis_thread_running': analysis_thread_running
         }
-        print(f"Health check: {health_data}")
+        print(f"Health check: {health_data}", file=sys.stderr)
         return jsonify(health_data)
 
 @app.route('/api/test')
@@ -271,25 +219,34 @@ def test():
         'server_running': True
     })
 
-if __name__ == '__main__':
-    print("\n" + "="*60)
-    print("STOCK TRACKER SERVER - EMERGENCY MODE")
-    print("="*60)
-    print(f"Analyzer Available: {ANALYZER_AVAILABLE}")
-    
-    if not ANALYZER_AVAILABLE:
-        print("⚠️  WARNING: Running with MOCK DATA")
-        print("This is for testing the frontend connection")
-    
-    print(f"Configured Stocks: {list(stock_config.keys())}")
-    
-    # Start analysis thread
+# Start analysis thread BEFORE Flask starts
+print("\n" + "="*60, file=sys.stderr)
+print("STOCK TRACKER SERVER INITIALIZATION", file=sys.stderr)
+print("="*60, file=sys.stderr)
+print(f"Analyzer Available: {ANALYZER_AVAILABLE}", file=sys.stderr)
+print(f"Configured Stocks: {list(stock_config.keys())}", file=sys.stderr)
+
+if ANALYZER_AVAILABLE:
+    print("\n🚀 STARTING ANALYSIS THREAD...", file=sys.stderr)
     analysis_thread = threading.Thread(target=analyze_stocks, daemon=True)
     analysis_thread.start()
-    print("✓ Analysis thread started")
+    print("✓✓✓ ANALYSIS THREAD STARTED ✓✓✓", file=sys.stderr)
     
+    # Give it a moment to start
+    time.sleep(1)
+    
+    if analysis_thread.is_alive():
+        print("✓ Thread confirmed running", file=sys.stderr)
+    else:
+        print("✗ WARNING: Thread may have stopped", file=sys.stderr)
+else:
+    print("✗ Analyzer not available - no analysis thread", file=sys.stderr)
+
+print("="*60, file=sys.stderr)
+
+if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
-    print(f"Port: {port}")
-    print("="*60 + "\n")
+    print(f"\n🌐 Starting Flask on port {port}", file=sys.stderr)
+    print("="*60 + "\n", file=sys.stderr)
     
     app.run(host='0.0.0.0', port=port, debug=False)
