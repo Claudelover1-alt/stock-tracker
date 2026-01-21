@@ -64,7 +64,8 @@ def analyze_single_stock(ticker, target_price):
                 "macd": 1.23,
                 "sma20": current_price * 0.98,
                 "sma50": current_price * 0.97,
-                "adx": 25.0  # Added to match frontend expectation
+                "adx": 25.0,  # Added to match frontend expectation
+                "mfi": 50.0   # Added to match frontend expectation for Money Flow Index
             },
             # *** FIXES ERROR 1024/989 ***
             "statistics": {
@@ -100,7 +101,8 @@ def analyze_single_stock(ticker, target_price):
                 "macd": 0.0,
                 "sma20": 0.0,
                 "sma50": 0.0,
-                "adx": 0.0
+                "adx": 0.0,
+                "mfi": 0.0
             },
             "statistics": {  # Filled out all fields
                 "return_1d": 0.0,
