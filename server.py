@@ -1,5 +1,4 @@
 from flask import Flask, jsonify, send_from_directory, request
-from flask_cors import CORS
 from datetime import datetime
 import threading, time, os, sys
 import yfinance as yf
@@ -8,7 +7,7 @@ import numpy as np
 
 app = Flask(__name__, static_folder=".")
 
-# SAFARI CORS 989 FIX - MANUAL HEADERS (flask-cors not enough)
+# SAFARI CORS FIX - Manual headers
 @app.after_request
 def after_request(response):
     response.headers.add('Access-Control-Allow-Origin', '*')
@@ -26,7 +25,7 @@ def handle_preflight():
         response.headers.add('Access-Control-Allow-Headers', 'Content-Type')
         return response
 
-# Global state - PRE-POPULATED
+# Global state
 stock_config = {"TSLA": 500.0, "AAPL": 250.0, "NVDA": 200.0, "RCAT": 30.0}
 stock_data = {}
 data_lock = threading.Lock()
@@ -77,7 +76,6 @@ def index():
 
 @app.route("/api/analysis")
 def get_analysis():
-    # IMMEDIATE DATA - no waiting
     with data_lock:
         for ticker in stock_config:
             if ticker not in stock_data:
@@ -101,6 +99,25 @@ def config():
 def health():
     return jsonify({"status": "healthy", "stocks": len(stock_data)})
 
+# *** FRONTEND DEBUG ENDPOINT ***
+@app.route("/api/debug")
+def debug():
+    """Test if frontend can parse this exact data."""
+    return jsonify({
+        "status": "alive",
+        "timestamp": datetime.now().isoformat(),
+        "stocks": {
+            "TSLA": {
+                "ticker": "TSLA",
+                "current_price": 429.40,
+                "target_price": 500.0,
+                "probability": {"composite_probability": 76.8}
+            }
+        },
+        "message": "Backend perfect - frontend needs fixing",
+        "all_stocks": stock_data
+    })
+
 # STARTUP - populate data immediately
 print("🚀 STARTING - PREPOPULATING DATA...", file=sys.stderr)
 for ticker, target in stock_config.items():
@@ -109,7 +126,7 @@ for ticker, target in stock_config.items():
 # Background refresh every 5 minutes
 def background_refresh():
     while True:
-        time.sleep(300)  # 5 minutes
+        time.sleep(300)
         for ticker, target in stock_config.items():
             stock_data[ticker] = analyze_single_stock(ticker, target)
         print("🔄 Background refresh complete", file=sys.stderr)
