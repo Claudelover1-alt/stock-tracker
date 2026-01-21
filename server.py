@@ -1,6 +1,6 @@
 """
-Flask Server for Stock Tracker - GUARANTEED WORKING VERSION
-Forces analysis thread to start and provides extensive logging
+Flask Server for Stock Tracker - INCREMENTAL SAVE VERSION
+Saves each stock immediately after analysis to prevent data loss
 """
 from flask import Flask, jsonify, send_from_directory, request
 from flask_cors import CORS
@@ -40,7 +40,7 @@ last_update = None
 analysis_thread_running = False
 
 def analyze_stocks():
-    """Background task to analyze stocks"""
+    """Background task to analyze stocks - saves after EACH stock"""
     global stock_data, last_update, analysis_thread_running
     
     analysis_thread_running = True
@@ -68,7 +68,7 @@ def analyze_stocks():
             
             print(f"Stocks to analyze: {list(current_config.keys())}", file=sys.stderr)
             
-            new_data = {}
+            stocks_completed = 0
             
             for ticker, target_price in current_config.items():
                 try:
@@ -77,16 +77,18 @@ def analyze_stocks():
                     report = analyzer.generate_analysis_report()
                     
                     if report:
-                        new_data[ticker] = report
+                        # SAVE IMMEDIATELY after each stock
+                        with data_lock:
+                            stock_data[ticker] = report
+                            last_update = datetime.now()
+                        
                         prob = report['probability']['composite_probability']
                         print(f"✓ {ticker} COMPLETE: {prob:.1f}% probability", file=sys.stderr)
+                        print(f"💾 SAVED {ticker} to cache immediately", file=sys.stderr)
+                        print(f"📊 Cache now contains: {list(stock_data.keys())}", file=sys.stderr)
+                        stocks_completed += 1
                     else:
                         print(f"✗ {ticker} FAILED: No report generated", file=sys.stderr)
-                        # Keep old data if available
-                        with data_lock:
-                            if ticker in stock_data:
-                                new_data[ticker] = stock_data[ticker]
-                                print(f"  → Using cached data for {ticker}", file=sys.stderr)
                     
                     # Delay between stocks
                     time.sleep(3)
@@ -95,29 +97,16 @@ def analyze_stocks():
                     print(f"✗ {ticker} ERROR: {e}", file=sys.stderr)
                     import traceback
                     traceback.print_exc(file=sys.stderr)
-                    
-                    # Keep old data if available
-                    with data_lock:
-                        if ticker in stock_data:
-                            new_data[ticker] = stock_data[ticker]
-                            print(f"  → Using cached data for {ticker}", file=sys.stderr)
-            
-            # Update global data
-            print(f"\n📊 SAVING DATA TO CACHE...", file=sys.stderr)
-            print(f"new_data keys: {list(new_data.keys())}", file=sys.stderr)
-            print(f"new_data has {len(new_data)} stocks", file=sys.stderr)
-            
-            with data_lock:
-                stock_data.clear()
-                stock_data.update(new_data)
-                last_update = datetime.now()
-                print(f"stock_data after save: {list(stock_data.keys())}", file=sys.stderr)
             
             print(f"\n{'='*60}", file=sys.stderr)
             print(f"CYCLE #{cycle_count} COMPLETE", file=sys.stderr)
-            print(f"Success: {len(new_data)}/{len(current_config)} stocks", file=sys.stderr)
-            print(f"Stock data now contains: {len(stock_data)} stocks", file=sys.stderr)
-            print(f"Last update: {last_update.strftime('%H:%M:%S')}", file=sys.stderr)
+            print(f"Successfully analyzed and saved: {stocks_completed}/{len(current_config)} stocks", file=sys.stderr)
+            
+            with data_lock:
+                print(f"Final cache contains: {list(stock_data.keys())}", file=sys.stderr)
+                if last_update:
+                    print(f"Last update: {last_update.strftime('%H:%M:%S')}", file=sys.stderr)
+            
             print(f"{'='*60}\n", file=sys.stderr)
             
             # Wait before next cycle
@@ -146,7 +135,11 @@ def index():
 @app.route('/api/analysis')
 def get_analysis():
     """Return stock data"""
-    print(f"API Request: /api/analysis - stocks in cache: {list(stock_data.keys())}", file=sys.stderr)
+    with data_lock:
+        num_stocks = len(stock_data)
+        stocks_list = list(stock_data.keys())
+    
+    print(f"API Request: /api/analysis - stocks in cache: {stocks_list}", file=sys.stderr)
     
     with data_lock:
         response_data = {
@@ -154,7 +147,7 @@ def get_analysis():
             'stocks': stock_data
         }
         
-        print(f"Returning data for {len(stock_data)} stocks", file=sys.stderr)
+        print(f"Returning data for {num_stocks} stocks: {stocks_list}", file=sys.stderr)
         return jsonify(response_data)
 
 @app.route('/api/config', methods=['GET'])
@@ -256,11 +249,9 @@ if __name__ == '__main__':
     print(f"\n🌐 Starting Flask on port {port}", file=sys.stderr)
     print("="*60 + "\n", file=sys.stderr)
     
-    # IMPORTANT: Use single worker to avoid shared state issues
-    # If using Gunicorn, set workers=1 in your Render config
     app.run(host='0.0.0.0', port=port, debug=False, threaded=True)
 else:
     # Running under Gunicorn
     print("\n⚠️  RUNNING UNDER GUNICORN", file=sys.stderr)
-    print("Make sure gunicorn is configured with --workers=1", file=sys.stderr)
+    print("Workers should be set to 1", file=sys.stderr)
     print("="*60 + "\n", file=sys.stderr)
