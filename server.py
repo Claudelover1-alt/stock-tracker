@@ -103,13 +103,20 @@ def analyze_stocks():
                             print(f"  → Using cached data for {ticker}", file=sys.stderr)
             
             # Update global data
+            print(f"\n📊 SAVING DATA TO CACHE...", file=sys.stderr)
+            print(f"new_data keys: {list(new_data.keys())}", file=sys.stderr)
+            print(f"new_data has {len(new_data)} stocks", file=sys.stderr)
+            
             with data_lock:
-                stock_data = new_data
+                stock_data.clear()
+                stock_data.update(new_data)
                 last_update = datetime.now()
+                print(f"stock_data after save: {list(stock_data.keys())}", file=sys.stderr)
             
             print(f"\n{'='*60}", file=sys.stderr)
             print(f"CYCLE #{cycle_count} COMPLETE", file=sys.stderr)
             print(f"Success: {len(new_data)}/{len(current_config)} stocks", file=sys.stderr)
+            print(f"Stock data now contains: {len(stock_data)} stocks", file=sys.stderr)
             print(f"Last update: {last_update.strftime('%H:%M:%S')}", file=sys.stderr)
             print(f"{'='*60}\n", file=sys.stderr)
             
@@ -249,4 +256,11 @@ if __name__ == '__main__':
     print(f"\n🌐 Starting Flask on port {port}", file=sys.stderr)
     print("="*60 + "\n", file=sys.stderr)
     
-    app.run(host='0.0.0.0', port=port, debug=False)
+    # IMPORTANT: Use single worker to avoid shared state issues
+    # If using Gunicorn, set workers=1 in your Render config
+    app.run(host='0.0.0.0', port=port, debug=False, threaded=True)
+else:
+    # Running under Gunicorn
+    print("\n⚠️  RUNNING UNDER GUNICORN", file=sys.stderr)
+    print("Make sure gunicorn is configured with --workers=1", file=sys.stderr)
+    print("="*60 + "\n", file=sys.stderr)
