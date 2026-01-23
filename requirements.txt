@@ -1,14 +1,6 @@
-# Alternative requirements.txt for Python 3.13+
-# Use this if runtime.txt doesn't work on your platform
-
 flask>=3.0.0
 flask-cors>=4.0.0
 gunicorn>=21.2.0
-
-# For Python 3.13, use latest versions with pre-built wheels
-yfinance>=0.2.38
-pandas>=2.2.3
+yfinance>=0.2.36
+pandas>=2.2.0
 numpy>=1.26.4
-
-# If still having issues, try:
-# pip install --only-binary :all: pandas numpy
