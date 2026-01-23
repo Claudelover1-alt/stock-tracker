@@ -319,3 +319,6 @@ if __name__ == "__main__":
     port = int(os.environ.get('PORT', 5000))
     print(f"Server ready on port {port}", file=sys.stderr)
     app.run(host='0.0.0.0', port=port, debug=False, threaded=True)
+else:
+    # Running under gunicorn or similar WSGI server
+    print("Running under WSGI server (gunicorn)", file=sys.stderr)
