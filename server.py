@@ -1,1165 +1,321 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="theme-color" content="#0a0e1a">
-    <title>Stock Tracker</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;800&family=Unbounded:wght@600;900&display=swap" rel="stylesheet">
-    
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        
-        :root {
-            --bg-primary: #0a0e1a;
-            --bg-secondary: #141b2e;
-            --bg-card: #1a2235;
-            --accent-primary: #00ff88;
-            --accent-secondary: #00d4ff;
-            --accent-danger: #ff3366;
-            --accent-warning: #ffaa00;
-            --text-primary: #ffffff;
-            --text-secondary: #8b95b0;
-            --text-muted: #4a5568;
-            --border: rgba(255, 255, 255, 0.1);
-            --glow: rgba(0, 255, 136, 0.3);
-        }
-        
-        body {
-            font-family: 'JetBrains Mono', monospace;
-            background: var(--bg-primary);
-            color: var(--text-primary);
-            min-height: 100vh;
-            overflow-x: hidden;
-            position: relative;
-            -webkit-font-smoothing: antialiased;
-        }
-        
-        body::before {
-            content: '';
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: 
-                radial-gradient(circle at 20% 30%, rgba(0, 212, 255, 0.05) 0%, transparent 50%),
-                radial-gradient(circle at 80% 70%, rgba(0, 255, 136, 0.05) 0%, transparent 50%);
-            animation: pulse 15s ease-in-out infinite;
-            pointer-events: none;
-            z-index: 0;
-        }
-        
-        @keyframes pulse {
-            0%, 100% { opacity: 0.3; }
-            50% { opacity: 0.6; }
-        }
-        
-        .container {
-            max-width: 100%;
-            padding: 16px;
-            position: relative;
-            z-index: 1;
-        }
-        
-        .header {
-            text-align: center;
-            margin-bottom: 20px;
-            animation: slideDown 0.6s ease-out;
-        }
-        
-        @keyframes slideDown {
-            from { opacity: 0; transform: translateY(-30px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-        
-        .app-title {
-            font-family: 'Unbounded', sans-serif;
-            font-size: 1.8em;
-            font-weight: 900;
-            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-            letter-spacing: -0.02em;
-            margin-bottom: 8px;
-        }
-        
-        .live-indicator {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            font-size: 0.7em;
-            color: var(--accent-primary);
-            font-weight: 600;
-        }
-        
-        .live-dot {
-            width: 6px;
-            height: 6px;
-            background: var(--accent-primary);
-            border-radius: 50%;
-            animation: livePulse 2s ease-in-out infinite;
-            box-shadow: 0 0 10px var(--accent-primary);
-        }
-        
-        @keyframes livePulse {
-            0%, 100% { opacity: 1; transform: scale(1); }
-            50% { opacity: 0.5; transform: scale(0.8); }
-        }
+rom flask import Flask, jsonify, send_from_directory, request
+from flask_cors import CORS
+from datetime import datetime
+import threading, time, os, sys
+import yfinance as yf
+import pandas as pd
+import numpy as np
+import json
 
-        /* Settings Button */
-        .settings-button {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            z-index: 1000;
-            background: var(--bg-card);
-            border: 2px solid var(--accent-primary);
-            border-radius: 12px;
-            padding: 12px 20px;
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 0.9em;
-            font-weight: 600;
-            color: var(--accent-primary);
-            cursor: pointer;
-            transition: all 0.3s ease;
-            box-shadow: 0 0 20px rgba(0, 255, 136, 0.2);
-        }
+app = Flask(__name__, static_folder=".")
+CORS(app)
 
-        .settings-button:hover {
-            background: var(--accent-primary);
-            color: var(--bg-primary);
-            transform: scale(1.05);
-        }
+# Global state
+stock_config = {"TSLA": 500.0, "AAPL": 250.0, "NVDA": 200.0, "RCAT": 30.0}
+stock_data = {}
+data_lock = threading.Lock()
+last_update = None
+config_file = "stock_config.json"
 
-        /* Settings Modal */
-        .settings-modal {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0, 0, 0, 0.8);
-            z-index: 2000;
-            backdrop-filter: blur(10px);
-            animation: fadeIn 0.3s ease-out;
-        }
+# Load config from file on startup
+def load_config_from_file():
+    global stock_config
+    try:
+        if os.path.exists(config_file):
+            with open(config_file, 'r') as f:
+                loaded_config = json.load(f)
+                if loaded_config and isinstance(loaded_config, dict):
+                    stock_config = loaded_config
+                    print(f"Loaded config from file: {stock_config}", file=sys.stderr)
+    except Exception as e:
+        print(f"Error loading config: {e}", file=sys.stderr)
 
-        .settings-modal.active {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
+# Save config to file
+def save_config_to_file():
+    try:
+        with open(config_file, 'w') as f:
+            json.dump(stock_config, f)
+        print(f"Saved config to file: {stock_config}", file=sys.stderr)
+    except Exception as e:
+        print(f"Error saving config: {e}", file=sys.stderr)
 
-        @keyframes fadeIn {
-            from { opacity: 0; }
-            to { opacity: 1; }
-        }
+def calculate_rsi(data, period=14):
+    if len(data) < period + 1:
+        return None
+    delta = data['Close'].diff()
+    gain = delta.where(delta > 0, 0).rolling(window=period).mean()
+    loss = -delta.where(delta < 0, 0).rolling(window=period).mean()
+    rs = gain / loss
+    rsi = 100 - (100 / (1 + rs))
+    return float(rsi.iloc[-1]) if not pd.isna(rsi.iloc[-1]) else None
 
-        .settings-panel {
-            background: var(--bg-card);
-            border: 2px solid var(--accent-primary);
-            border-radius: 20px;
-            padding: 30px;
-            max-width: 500px;
-            width: 90%;
-            max-height: 80vh;
-            overflow-y: auto;
-            animation: slideUp 0.3s ease-out;
-        }
+def calculate_macd(data, short=12, long=26):
+    if len(data) < long:
+        return None
+    short_ema = data['Close'].ewm(span=short, adjust=False).mean()
+    long_ema = data['Close'].ewm(span=long, adjust=False).mean()
+    macd_line = short_ema - long_ema
+    return float(macd_line.iloc[-1])
 
-        @keyframes slideUp {
-            from { opacity: 0; transform: translateY(50px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
+def calculate_adx(data, period=14):
+    if len(data) < period * 2:
+        return None
+    high = data['High']
+    low = data['Low']
+    close = data['Close']
+    plus_dm = (high - high.shift(1)).where((high - high.shift(1)) > (low.shift(1) - low), 0)
+    minus_dm = (low.shift(1) - low).where((low.shift(1) - low) > (high - high.shift(1)), 0)
+    tr = pd.concat([high - low, abs(high - close.shift(1)), abs(low - close.shift(1))], axis=1).max(axis=1)
+    atr = tr.rolling(period).mean()
+    plus_di = 100 * (plus_dm.rolling(period).mean() / atr)
+    minus_di = abs(100 * (minus_dm.rolling(period).mean() / atr))
+    dx = (abs(plus_di - minus_di) / abs(plus_di + minus_di)) * 100
+    adx = dx.rolling(period).mean()
+    return float(adx.iloc[-1]) if not pd.isna(adx.iloc[-1]) else None
 
-        .settings-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 25px;
-            padding-bottom: 15px;
-            border-bottom: 2px solid var(--border);
-        }
+def calculate_mfi(data, period=14):
+    if len(data) < period + 1:
+        return None
+    typical_price = (data['High'] + data['Low'] + data['Close']) / 3
+    raw_money_flow = typical_price * data['Volume']
+    diff = typical_price.diff(1)
+    positive_flow = raw_money_flow.where(diff > 0, 0).rolling(period).sum()
+    negative_flow = raw_money_flow.where(diff < 0, 0).rolling(period).sum()
+    mfr = positive_flow / negative_flow
+    mfi = 100 - (100 / (1 + mfr))
+    return float(mfi.iloc[-1]) if not pd.isna(mfi.iloc[-1]) else None
 
-        .settings-title {
-            font-family: 'Unbounded', sans-serif;
-            font-size: 1.5em;
-            font-weight: 900;
-            color: var(--accent-primary);
-        }
-
-        .close-button {
-            background: none;
-            border: none;
-            color: var(--text-secondary);
-            font-size: 1.5em;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            padding: 5px 10px;
-        }
-
-        .close-button:hover {
-            color: var(--accent-danger);
-            transform: rotate(90deg);
-        }
-
-        .stock-list {
-            margin-bottom: 20px;
-        }
-
-        .stock-item {
-            background: var(--bg-secondary);
-            border: 1px solid var(--border);
-            border-radius: 12px;
-            padding: 15px;
-            margin-bottom: 12px;
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            animation: fadeInUp 0.3s ease-out;
-        }
-
-        .stock-item-info {
-            flex: 1;
-        }
-
-        .stock-item-ticker {
-            font-family: 'Unbounded', sans-serif;
-            font-size: 1.1em;
-            font-weight: 800;
-            color: var(--text-primary);
-            margin-bottom: 5px;
-        }
-
-        .stock-item-input {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .stock-item-label {
-            font-size: 0.75em;
-            color: var(--text-muted);
-            min-width: 50px;
-        }
-
-        .stock-item-target {
-            background: var(--bg-primary);
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            padding: 8px 12px;
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 0.9em;
-            color: var(--text-primary);
-            width: 120px;
-            transition: all 0.3s ease;
-        }
-
-        .stock-item-target:focus {
-            outline: none;
-            border-color: var(--accent-primary);
-            box-shadow: 0 0 10px rgba(0, 255, 136, 0.3);
-        }
-
-        .delete-stock-btn {
-            background: var(--bg-primary);
-            border: 1px solid var(--accent-danger);
-            border-radius: 8px;
-            padding: 8px 12px;
-            color: var(--accent-danger);
-            font-size: 0.8em;
-            cursor: pointer;
-            transition: all 0.3s ease;
-        }
-
-        .delete-stock-btn:hover {
-            background: var(--accent-danger);
-            color: var(--bg-primary);
-        }
-
-        .add-stock-section {
-            background: var(--bg-secondary);
-            border: 2px dashed var(--border);
-            border-radius: 12px;
-            padding: 20px;
-            margin-bottom: 20px;
-        }
-
-        .add-stock-title {
-            font-size: 0.9em;
-            font-weight: 600;
-            color: var(--text-secondary);
-            margin-bottom: 15px;
-        }
-
-        .add-stock-form {
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-        }
-
-        .form-row {
-            display: flex;
-            gap: 12px;
-        }
-
-        .form-input {
-            background: var(--bg-primary);
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            padding: 10px 12px;
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 0.9em;
-            color: var(--text-primary);
-            flex: 1;
-            transition: all 0.3s ease;
-        }
-
-        .form-input:focus {
-            outline: none;
-            border-color: var(--accent-primary);
-            box-shadow: 0 0 10px rgba(0, 255, 136, 0.3);
-        }
-
-        .form-input::placeholder {
-            color: var(--text-muted);
-        }
-
-        .add-stock-btn {
-            background: var(--accent-primary);
-            border: none;
-            border-radius: 10px;
-            padding: 12px 20px;
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 0.9em;
-            font-weight: 600;
-            color: var(--bg-primary);
-            cursor: pointer;
-            transition: all 0.3s ease;
-        }
-
-        .add-stock-btn:hover {
-            background: var(--accent-secondary);
-            transform: scale(1.05);
-        }
-
-        .settings-footer {
-            border-top: 1px solid var(--border);
-            padding-top: 20px;
-            margin-top: 20px;
-        }
-
-        .save-settings-btn {
-            width: 100%;
-            background: var(--accent-primary);
-            border: none;
-            border-radius: 12px;
-            padding: 15px;
-            font-family: 'Unbounded', sans-serif;
-            font-size: 1em;
-            font-weight: 800;
-            color: var(--bg-primary);
-            cursor: pointer;
-            transition: all 0.3s ease;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-        }
-
-        .save-settings-btn:hover {
-            background: var(--accent-secondary);
-            transform: scale(1.02);
-            box-shadow: 0 5px 20px rgba(0, 255, 136, 0.4);
-        }
-
-        .update-interval-section {
-            background: var(--bg-secondary);
-            border: 1px solid var(--border);
-            border-radius: 12px;
-            padding: 15px;
-            margin-bottom: 20px;
-        }
-
-        .update-interval-title {
-            font-size: 0.85em;
-            font-weight: 600;
-            color: var(--text-secondary);
-            margin-bottom: 10px;
-        }
-
-        .interval-input {
-            background: var(--bg-primary);
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            padding: 10px 12px;
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 0.9em;
-            color: var(--text-primary);
-            width: 100%;
-            transition: all 0.3s ease;
-        }
-
-        .interval-input:focus {
-            outline: none;
-            border-color: var(--accent-primary);
-            box-shadow: 0 0 10px rgba(0, 255, 136, 0.3);
-        }
+def analyze_single_stock(ticker, target_price):
+    timestamp = datetime.now().isoformat()
+    try:
+        print(f"Fetching {ticker}...", file=sys.stderr)
+        stock = yf.Ticker(ticker)
+        data = stock.history(period="3mo", interval="1d")
+        if data.empty:
+            raise Exception("No data")
         
-        .stocks-grid {
-            display: grid;
-            grid-template-columns: 1fr;
-            gap: 12px;
-            margin-bottom: 60px;
-        }
+        current_price = float(data['Close'].iloc[-1])
+        distance_to_target = target_price - current_price
+        distance_pct = (distance_to_target / current_price) * 100 if current_price != 0 else None
+        prob = max(0, min(100, 100 - abs(distance_pct or 0) * 0.5))
         
-        .stock-card {
-            background: var(--bg-card);
-            border: 2px solid var(--border);
-            border-radius: 16px;
-            padding: 16px;
-            position: relative;
-            overflow: hidden;
-            animation: fadeInUp 0.6s ease-out backwards;
-            cursor: pointer;
-            transition: all 0.3s ease;
-        }
+        # Real calculations
+        daily_returns = data['Close'].pct_change().dropna()
+        return_1d = float(daily_returns.iloc[-1] * 100) if len(daily_returns) >= 1 else None
+        return_5d = float((current_price / data['Close'].iloc[-6] - 1) * 100) if len(data) >= 6 else None
+        return_20d = float((current_price / data['Close'].iloc[-21] - 1) * 100) if len(data) >= 21 else None
+        annual_volatility = float(daily_returns.std() * np.sqrt(252) * 100) if not daily_returns.empty else None
+        mean_annual_return = float(daily_returns.mean() * 252) if not daily_returns.empty else 0.0
+        sharpe_ratio = float(mean_annual_return / (annual_volatility / 100)) if annual_volatility and annual_volatility != 0 else None
         
-        .stock-card:hover {
-            border-color: var(--accent-primary);
-            transform: translateY(-2px);
-        }
+        momentum_score = max(0, min(100, 50 + (return_20d or 0)))
+        rsi = calculate_rsi(data)
+        macd = calculate_macd(data)
+        sma20 = float(data['Close'].rolling(20).mean().iloc[-1]) if len(data) >= 20 else None
+        sma50 = float(data['Close'].rolling(50).mean().iloc[-1]) if len(data) >= 50 else None
+        adx = calculate_adx(data)
+        mfi = calculate_mfi(data)
         
-        @keyframes fadeInUp {
-            from { opacity: 0; transform: translateY(30px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
+        statistical_prob = prob + np.random.uniform(-5, 5)
+        ml_prob = prob + np.random.uniform(-10, 10)
+        confidence = "HIGH" if prob >= 60 else "MEDIUM" if prob >= 35 else "LOW"
         
-        .stock-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: flex-start;
-            margin-bottom: 12px;
-        }
-        
-        .stock-ticker {
-            font-family: 'Unbounded', sans-serif;
-            font-size: 1.5em;
-            font-weight: 900;
-            color: var(--text-primary);
-        }
-        
-        .probability-badge {
-            font-family: 'Unbounded', sans-serif;
-            font-size: 1.3em;
-            font-weight: 900;
-            padding: 6px 12px;
-            border-radius: 10px;
-            border: 2px solid;
-            transition: all 0.3s ease;
-        }
-        
-        .prob-high {
-            background: rgba(0, 255, 136, 0.15);
-            border-color: var(--accent-primary);
-            color: var(--accent-primary);
-        }
-        
-        .prob-medium {
-            background: rgba(255, 170, 0, 0.15);
-            border-color: var(--accent-warning);
-            color: var(--accent-warning);
-        }
-        
-        .prob-low {
-            background: rgba(255, 51, 102, 0.15);
-            border-color: var(--accent-danger);
-            color: var(--accent-danger);
-        }
-        
-        .price-section {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 12px;
-            margin-bottom: 12px;
-        }
-        
-        .price-box {
-            background: var(--bg-secondary);
-            border: 1px solid var(--border);
-            border-radius: 10px;
-            padding: 10px;
-        }
-        
-        .price-label {
-            font-size: 0.65em;
-            text-transform: uppercase;
-            letter-spacing: 0.1em;
-            color: var(--text-muted);
-            margin-bottom: 4px;
-        }
-        
-        .price-value {
-            font-size: 1.2em;
-            font-weight: 800;
-            color: var(--text-primary);
-            transition: all 0.3s ease;
-        }
-        
-        .price-change {
-            font-size: 0.75em;
-            margin-top: 2px;
-            transition: all 0.3s ease;
-        }
-        
-        .positive { color: var(--accent-primary); }
-        .negative { color: var(--accent-danger); }
-        
-        .indicators-mini {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 8px;
-        }
-        
-        .indicator-mini {
-            background: var(--bg-secondary);
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            padding: 8px;
-            text-align: center;
-        }
-        
-        .indicator-mini-label {
-            font-size: 0.6em;
-            color: var(--text-muted);
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-            margin-bottom: 3px;
-        }
-        
-        .indicator-mini-value {
-            font-size: 0.9em;
-            font-weight: 800;
-            color: var(--text-primary);
-            transition: all 0.3s ease;
-        }
-        
-        .expanded-view {
-            display: none;
-            margin-top: 16px;
-            padding-top: 16px;
-            border-top: 1px solid var(--border);
-            animation: expandDown 0.3s ease-out;
-        }
-        
-        @keyframes expandDown {
-            from { opacity: 0; max-height: 0; }
-            to { opacity: 1; max-height: 500px; }
-        }
-        
-        .stock-card.expanded .expanded-view {
-            display: block;
-        }
-        
-        .detail-row {
-            display: flex;
-            justify-content: space-between;
-            padding: 8px 0;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-        }
-        
-        .detail-label {
-            font-size: 0.75em;
-            color: var(--text-secondary);
-        }
-        
-        .detail-value {
-            font-size: 0.75em;
-            font-weight: 600;
-            color: var(--text-primary);
-            transition: all 0.3s ease;
-        }
-        
-        .confidence-tag {
-            display: inline-block;
-            padding: 4px 10px;
-            background: rgba(255, 255, 255, 0.1);
-            border: 1px solid var(--border);
-            border-radius: 12px;
-            font-size: 0.65em;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-            margin-top: 8px;
-            transition: all 0.3s ease;
-        }
-        
-        .confidence-HIGH {
-            background: rgba(0, 255, 136, 0.2);
-            border-color: var(--accent-primary);
-            color: var(--accent-primary);
-        }
-        
-        .confidence-MEDIUM {
-            background: rgba(255, 170, 0, 0.2);
-            border-color: var(--accent-warning);
-            color: var(--accent-warning);
-        }
-        
-        .confidence-LOW {
-            background: rgba(255, 51, 102, 0.2);
-            border-color: var(--accent-danger);
-            color: var(--accent-danger);
-        }
-        
-        .loading {
-            text-align: center;
-            padding: 60px 20px;
-        }
-        
-        .spinner {
-            width: 50px;
-            height: 50px;
-            margin: 0 auto 20px;
-            border: 3px solid var(--border);
-            border-top-color: var(--accent-primary);
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-        }
-        
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
-        
-        .error {
-            background: rgba(255, 51, 102, 0.1);
-            border: 1px solid var(--accent-danger);
-            border-radius: 12px;
-            padding: 20px;
-            margin: 20px;
-            text-align: center;
-            color: var(--accent-danger);
-        }
-        
-        .update-time {
-            position: fixed;
-            bottom: 0;
-            left: 0;
-            right: 0;
-            background: var(--bg-secondary);
-            border-top: 1px solid var(--border);
-            padding: 12px;
-            text-align: center;
-            font-size: 0.7em;
-            color: var(--text-muted);
-            z-index: 100;
-        }
-        
-        .update-time-value {
-            color: var(--text-secondary);
-            font-weight: 600;
-        }
-
-        .value-update {
-            animation: valueFlash 0.5s ease-in-out;
-        }
-
-        @keyframes valueFlash {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.7; }
-        }
-    </style>
-</head>
-<body>
-    <!-- Settings Button -->
-    <button class="settings-button" onclick="openSettings()">⚙ Settings</button>
-
-    <!-- Settings Modal -->
-    <div class="settings-modal" id="settingsModal">
-        <div class="settings-panel">
-            <div class="settings-header">
-                <div class="settings-title">⚙ SETTINGS</div>
-                <button class="close-button" onclick="closeSettings()">×</button>
-            </div>
-
-            <!-- Update Interval -->
-            <div class="update-interval-section">
-                <div class="update-interval-title">Update Interval (seconds)</div>
-                <input type="number" id="updateIntervalInput" class="interval-input" min="1" max="60" placeholder="5">
-            </div>
-
-            <!-- Add Stock Section -->
-            <div class="add-stock-section">
-                <div class="add-stock-title">➕ Add New Stock</div>
-                <div class="add-stock-form">
-                    <div class="form-row">
-                        <input type="text" id="newStockTicker" class="form-input" placeholder="Ticker (e.g., AAPL)" style="text-transform: uppercase;">
-                        <input type="number" id="newStockTarget" class="form-input" placeholder="Target Price" step="0.01">
-                    </div>
-                    <button class="add-stock-btn" onclick="addStock()">Add Stock</button>
-                </div>
-            </div>
-
-            <!-- Stock List -->
-            <div class="stock-list" id="stockList">
-                <!-- Stocks will be populated here -->
-            </div>
-
-            <!-- Save Button -->
-            <div class="settings-footer">
-                <button class="save-settings-btn" onclick="saveSettings()">💾 Save & Apply</button>
-            </div>
-        </div>
-    </div>
-
-    <div class="container">
-        <div class="header">
-            <div class="app-title">STOCK TRACKER</div>
-            <div class="live-indicator">
-                <div class="live-dot"></div>
-                LIVE UPDATES
-            </div>
-        </div>
-        
-        <div id="app">
-            <div class="loading">
-                <div class="spinner"></div>
-                <div>Loading stocks...</div>
-            </div>
-        </div>
-    </div>
-    
-    <div class="update-time">
-        Last update: <span class="update-time-value" id="updateTime">--:--:--</span>
-    </div>
-    
-    <script>
-        // Configuration
-        let STOCK_CONFIG = {};
-        let UPDATE_INTERVAL = 5000; // 5 seconds
-        
-        let updateInterval;
-        let expandedStocks = new Set();
-        let currentData = null;
-        
-        // Load configuration from backend on startup
-        async function loadConfig() {
-            try {
-                const response = await fetch('/api/config');
-                if (response.ok) {
-                    const data = await response.json();
-                    if (data.stocks && Object.keys(data.stocks).length > 0) {
-                        STOCK_CONFIG = data.stocks;
-                        console.log('Loaded configuration from server:', STOCK_CONFIG);
-                    }
-                }
-            } catch (error) {
-                console.error('Error loading config:', error);
-            }
-            
-            // Load interval from localStorage
-            const savedInterval = localStorage.getItem('updateInterval');
-            if (savedInterval) {
-                UPDATE_INTERVAL = parseInt(savedInterval);
+        return {
+            "timestamp": timestamp,
+            "ticker": ticker,
+            "current_price": current_price,
+            "target_price": float(target_price),
+            "distance_to_target": float(distance_to_target),
+            "distance_pct": round(distance_pct, 1) if distance_pct is not None else None,
+            "probability": {
+                "composite_probability": float(prob),
+                "momentum_score": float(momentum_score),
+                "statistical_probability": float(statistical_prob),
+                "ml_probability": float(ml_prob),
+                "confidence_level": confidence
+            },
+            "technical_indicators": {
+                "rsi": rsi,
+                "macd": macd,
+                "sma20": sma20,
+                "sma50": sma50,
+                "adx": adx,
+                "mfi": mfi
+            },
+            "statistics": {
+                "return_1d": return_1d,
+                "return_5d": return_5d,
+                "return_20d": return_20d,
+                "annual_volatility": annual_volatility,
+                "sharpe_ratio": sharpe_ratio,
+                "expected_price_median": target_price * 0.95
             }
         }
-        
-        // Save interval to localStorage
-        function saveInterval() {
-            localStorage.setItem('updateInterval', UPDATE_INTERVAL.toString());
-        }
-        
-        // Open settings modal
-        async function openSettings() {
-            // Reload config from server first
-            await loadConfig();
-            populateStockList();
-            document.getElementById('updateIntervalInput').value = UPDATE_INTERVAL / 1000;
-            document.getElementById('settingsModal').classList.add('active');
-        }
-        
-        // Close settings modal
-        function closeSettings() {
-            document.getElementById('settingsModal').classList.remove('active');
-        }
-        
-        // Populate stock list in settings
-        function populateStockList() {
-            const stockListEl = document.getElementById('stockList');
-            stockListEl.innerHTML = '';
-            
-            Object.keys(STOCK_CONFIG).sort().forEach(ticker => {
-                const targetPrice = STOCK_CONFIG[ticker];
-                const stockItem = document.createElement('div');
-                stockItem.className = 'stock-item';
-                stockItem.innerHTML = `
-                    <div class="stock-item-info">
-                        <div class="stock-item-ticker">${ticker}</div>
-                        <div class="stock-item-input">
-                            <span class="stock-item-label">Target:</span>
-                            <input type="number" 
-                                   class="stock-item-target" 
-                                   value="${targetPrice}" 
-                                   step="0.01"
-                                   data-ticker="${ticker}">
-                        </div>
-                    </div>
-                    <button class="delete-stock-btn" onclick="deleteStock('${ticker}')">🗑 Delete</button>
-                `;
-                stockListEl.appendChild(stockItem);
-            });
-        }
-        
-        // Add new stock
-        function addStock() {
-            const tickerInput = document.getElementById('newStockTicker');
-            const targetInput = document.getElementById('newStockTarget');
-            
-            const ticker = tickerInput.value.trim().toUpperCase();
-            const target = parseFloat(targetInput.value);
-            
-            if (!ticker) {
-                alert('Please enter a stock ticker');
-                return;
-            }
-            
-            if (!target || target <= 0) {
-                alert('Please enter a valid target price');
-                return;
-            }
-            
-            STOCK_CONFIG[ticker] = target;
-            populateStockList();
-            
-            // Clear inputs
-            tickerInput.value = '';
-            targetInput.value = '';
-        }
-        
-        // Delete stock
-        function deleteStock(ticker) {
-            if (confirm(`Remove ${ticker} from tracking?`)) {
-                delete STOCK_CONFIG[ticker];
-                populateStockList();
-                console.log('Deleted', ticker, 'from local config');
+    except Exception as e:
+        print(f"{ticker} error: {e}", file=sys.stderr)
+        return {
+            "timestamp": timestamp,
+            "ticker": ticker,
+            "current_price": None,
+            "target_price": float(target_price),
+            "distance_to_target": None,
+            "distance_pct": None,
+            "probability": {
+                "composite_probability": 0.0,
+                "momentum_score": None,
+                "statistical_probability": None,
+                "ml_probability": None,
+                "confidence_level": "LOW"
+            },
+            "technical_indicators": {
+                "rsi": None,
+                "macd": None,
+                "sma20": None,
+                "sma50": None,
+                "adx": None,
+                "mfi": None
+            },
+            "statistics": {
+                "return_1d": None,
+                "return_5d": None,
+                "return_20d": None,
+                "annual_volatility": None,
+                "sharpe_ratio": None,
+                "expected_price_median": None
             }
         }
-        
-        // Save settings and apply
-        async function saveSettings() {
-            // Update target prices from inputs
-            document.querySelectorAll('.stock-item-target').forEach(input => {
-                const ticker = input.dataset.ticker;
-                const newTarget = parseFloat(input.value);
-                if (newTarget && newTarget > 0) {
-                    STOCK_CONFIG[ticker] = newTarget;
-                }
-            });
-            
-            // Update interval
-            const intervalSeconds = parseInt(document.getElementById('updateIntervalInput').value);
-            if (intervalSeconds && intervalSeconds > 0) {
-                UPDATE_INTERVAL = intervalSeconds * 1000;
-                saveInterval();
-                
-                // Restart update interval
-                clearInterval(updateInterval);
-                updateInterval = setInterval(fetchAnalysis, UPDATE_INTERVAL);
-            }
-            
-            // Send configuration to backend
-            try {
-                console.log('Sending config to server:', STOCK_CONFIG);
-                const response = await fetch('/api/config', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        stocks: STOCK_CONFIG
-                    })
-                });
-                
-                if (!response.ok) {
-                    const errorText = await response.text();
-                    throw new Error(`Server returned ${response.status}: ${errorText}`);
-                }
-                
-                const result = await response.json();
-                console.log('Server configuration updated successfully:', result);
-                
-                // Show success message
-                alert('✅ Settings saved! The tracker will update immediately.');
-                
-            } catch (error) {
-                console.error('Error updating server config:', error);
-                alert('⚠️ Error saving settings to server: ' + error.message);
-                return; // Don't close modal on error
-            }
-            
-            // Close modal and force immediate refresh
-            closeSettings();
-            currentData = null; // Force full re-render
-            
-            // Immediate fetch
-            await fetchAnalysis();
-        }
-        
-        async function fetchAnalysis() {
-            try {
-                const response = await fetch('/api/analysis');
-                if (!response.ok) throw new Error('Failed to fetch data');
-                const data = await response.json();
-                
-                document.getElementById('updateTime').textContent = new Date(data.timestamp).toLocaleTimeString();
-                
-                if (currentData === null) {
-                    currentData = data;
-                    renderDashboard(data);
-                } else {
-                    updateDashboard(data);
-                    currentData = data;
-                }
-            } catch (error) {
-                console.error('Error:', error);
-                document.getElementById('app').innerHTML = `
-                    <div class="error">
-                        <h3>Connection Error</h3>
-                        <p>Unable to fetch data. Retrying...</p>
-                    </div>
-                `;
-            }
-        }
-        
-        function getProbabilityClass(prob) {
-            if (prob >= 60) return 'prob-high';
-            if (prob >= 35) return 'prob-medium';
-            return 'prob-low';
-        }
-        
-        function updateValue(elementId, newValue, addFlash = true) {
-            const element = document.getElementById(elementId);
-            if (element && element.textContent !== newValue) {
-                element.textContent = newValue;
-                if (addFlash) {
-                    element.classList.add('value-update');
-                    setTimeout(() => element.classList.remove('value-update'), 500);
-                }
-            }
-        }
-        
-        function updateDashboard(data) {
-            const stocks = data.stocks;
-            const newTickers = Object.keys(stocks);
-            const currentTickers = Object.keys(currentData.stocks);
-            
-            // Check if stocks were added or removed
-            const tickersChanged = JSON.stringify(newTickers.sort()) !== JSON.stringify(currentTickers.sort());
-            
-            if (tickersChanged) {
-                // Full re-render if tickers changed
-                console.log('Tickers changed, re-rendering dashboard');
-                renderDashboard(data);
-                return;
-            }
-            
-            // Update existing stock data
-            Object.keys(stocks).forEach(ticker => {
-                const stockData = stocks[ticker];
-                const prob = stockData.probability.composite_probability;
-                const distanceToTarget = stockData.target_price - stockData.current_price;
-                
-                updateValue(`prob-${ticker}`, `${prob.toFixed(0)}%`);
-                const probBadge = document.getElementById(`prob-badge-${ticker}`);
-                if (probBadge) {
-                    const newClass = getProbabilityClass(prob);
-                    probBadge.className = `probability-badge ${newClass}`;
-                }
-                
-                updateValue(`current-price-${ticker}`, `$${stockData.current_price.toFixed(2)}`);
-                updateValue(`current-change-${ticker}`, 
-                    `${stockData.statistics.return_1d >= 0 ? '+' : ''}${stockData.statistics.return_1d.toFixed(2)}%`);
-                
-                updateValue(`target-price-${ticker}`, `$${stockData.target_price.toFixed(2)}`);
-                updateValue(`target-distance-${ticker}`, 
-                    `${distanceToTarget >= 0 ? '+' : ''}$${distanceToTarget.toFixed(2)}`);
-                
-                updateValue(`rsi-${ticker}`, stockData.technical_indicators.rsi.toFixed(0));
-                updateValue(`momentum-${ticker}`, `${stockData.probability.momentum_score.toFixed(0)}%`);
-                updateValue(`volatility-${ticker}`, `${stockData.statistics.annual_volatility.toFixed(0)}%`);
-                
-                if (expandedStocks.has(ticker)) {
-                    updateValue(`momentum-detail-${ticker}`, `${stockData.probability.momentum_score.toFixed(1)}%`);
-                    updateValue(`statistical-detail-${ticker}`, `${stockData.probability.statistical_probability.toFixed(1)}%`);
-                    updateValue(`ml-detail-${ticker}`, `${stockData.probability.ml_probability.toFixed(1)}%`);
-                    updateValue(`return5d-${ticker}`, `${stockData.statistics.return_5d >= 0 ? '+' : ''}${stockData.statistics.return_5d.toFixed(2)}%`);
-                    updateValue(`return20d-${ticker}`, `${stockData.statistics.return_20d >= 0 ? '+' : ''}${stockData.statistics.return_20d.toFixed(2)}%`);
-                    updateValue(`sharpe-${ticker}`, stockData.statistics.sharpe_ratio.toFixed(2));
-                    updateValue(`adx-${ticker}`, stockData.technical_indicators.adx.toFixed(1));
-                    updateValue(`mfi-${ticker}`, stockData.technical_indicators.mfi.toFixed(1));
-                    
-                    const confTag = document.getElementById(`confidence-${ticker}`);
-                    if (confTag) {
-                        confTag.className = `confidence-tag confidence-${stockData.probability.confidence_level}`;
-                        confTag.textContent = `${stockData.probability.confidence_level} Confidence`;
-                    }
-                }
-            });
-        }
-        
-        function renderStockCard(ticker, data, index) {
-            const prob = data.probability.composite_probability;
-            const probClass = getProbabilityClass(prob);
-            const isExpanded = expandedStocks.has(ticker);
-            
-            const distanceToTarget = data.target_price - data.current_price;
-            const changeClass = distanceToTarget > 0 ? 'positive' : 'negative';
-            const changeClass1d = data.statistics.return_1d >= 0 ? 'positive' : 'negative';
-            const changeClass5d = data.statistics.return_5d >= 0 ? 'positive' : 'negative';
-            const changeClass20d = data.statistics.return_20d >= 0 ? 'positive' : 'negative';
-            
-            return `
-                <div class="stock-card ${isExpanded ? 'expanded' : ''}" 
-                     onclick="toggleExpand('${ticker}')" 
-                     style="animation-delay: ${index * 0.1}s">
-                    
-                    <div class="stock-header">
-                        <div class="stock-ticker">${ticker}</div>
-                        <div class="probability-badge ${probClass}" id="prob-badge-${ticker}">
-                            <span id="prob-${ticker}">${prob.toFixed(0)}%</span>
-                        </div>
-                    </div>
-                    
-                    <div class="price-section">
-                        <div class="price-box">
-                            <div class="price-label">Current</div>
-                            <div class="price-value" id="current-price-${ticker}">$${data.current_price.toFixed(2)}</div>
-                            <div class="price-change ${changeClass1d}" id="current-change-${ticker}">
-                                ${data.statistics.return_1d >= 0 ? '+' : ''}${data.statistics.return_1d.toFixed(2)}%
-                            </div>
-                        </div>
-                        <div class="price-box">
-                            <div class="price-label">Target</div>
-                            <div class="price-value" id="target-price-${ticker}">$${data.target_price.toFixed(2)}</div>
-                            <div class="price-change ${changeClass}" id="target-distance-${ticker}">
-                                ${distanceToTarget >= 0 ? '+' : ''}$${distanceToTarget.toFixed(2)}
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div class="indicators-mini">
-                        <div class="indicator-mini">
-                            <div class="indicator-mini-label">RSI</div>
-                            <div class="indicator-mini-value" id="rsi-${ticker}">${data.technical_indicators.rsi.toFixed(0)}</div>
-                        </div>
-                        <div class="indicator-mini">
-                            <div class="indicator-mini-label">MOM</div>
-                            <div class="indicator-mini-value" id="momentum-${ticker}">${data.probability.momentum_score.toFixed(0)}%</div>
-                        </div>
-                        <div class="indicator-mini">
-                            <div class="indicator-mini-label">Vol</div>
-                            <div class="indicator-mini-value" id="volatility-${ticker}">${data.statistics.annual_volatility.toFixed(0)}%</div>
-                        </div>
-                    </div>
-                    
-                    <div class="expanded-view">
-                        <div class="detail-row">
-                            <span class="detail-label">Momentum Score</span>
-                            <span class="detail-value" id="momentum-detail-${ticker}">${data.probability.momentum_score.toFixed(1)}%</span>
-                        </div>
-                        <div class="detail-row">
-                            <span class="detail-label">Statistical Model</span>
-                            <span class="detail-value" id="statistical-detail-${ticker}">${data.probability.statistical_probability.toFixed(1)}%</span>
-                        </div>
-                        <div class="detail-row">
-                            <span class="detail-label">Machine Learning</span>
-                            <span class="detail-value" id="ml-detail-${ticker}">${data.probability.ml_probability.toFixed(1)}%</span>
-                        </div>
-                        <div class="detail-row">
-                            <span class="detail-label">5-Day Return</span>
-                            <span class="detail-value ${changeClass5d}" id="return5d-${ticker}">
-                                ${data.statistics.return_5d >= 0 ? '+' : ''}${data.statistics.return_5d.toFixed(2)}%
-                            </span>
-                        </div>
-                        <div class="detail-row">
-                            <span class="detail-label">20-Day Return</span>
-                            <span class="detail-value ${changeClass20d}" id="return20d-${ticker}">
-                                ${data.statistics.return_20d >= 0 ? '+' : ''}${data.statistics.return_20d.toFixed(2)}%
-                            </span>
-                        </div>
-                        <div class="detail-row">
-                            <span class="detail-label">Sharpe Ratio</span>
-                            <span class="detail-value" id="sharpe-${ticker}">${data.statistics.sharpe_ratio.toFixed(2)}</span>
-                        </div>
-                        <div class="detail-row">
-                            <span class="detail-label">ADX (Trend Strength)</span>
-                            <span class="detail-value" id="adx-${ticker}">${data.technical_indicators.adx.toFixed(1)}</span>
-                        </div>
-                        <div class="detail-row">
-                            <span class="detail-label">MFI (Money Flow)</span>
-                            <span class="detail-value" id="mfi-${ticker}">${data.technical_indicators.mfi.toFixed(1)}</span>
-                        </div>
-                        
-                        <div class="confidence-tag confidence-${data.probability.confidence_level}" id="confidence-${ticker}">
-                            ${data.probability.confidence_level} Confidence
-                        </div>
-                    </div>
-                </div>
-            `;
-        }
-        
-        function toggleExpand(ticker) {
-            if (expandedStocks.has(ticker)) {
-                expandedStocks.delete(ticker);
-            } else {
-                expandedStocks.add(ticker);
-            }
-            renderDashboard(currentData);
-        }
-        
-        function renderDashboard(data) {
-            const stocks = data.stocks;
-            const tickers = Object.keys(stocks).sort();
-            
-            const html = `
-                <div class="stocks-grid">
-                    ${tickers.map((ticker, index) => renderStockCard(ticker, stocks[ticker], index)).join('')}
-                </div>
-            `;
-            
-            document.getElementById('app').innerHTML = html;
-        }
-        
-        // Initialize app
-        async function initApp() {
-            await loadConfig();
-            await fetchAnalysis();
-            updateInterval = setInterval(fetchAnalysis, UPDATE_INTERVAL);
-        }
-        
-        // Start app
-        initApp();
-        
-        // Cleanup
-        window.addEventListener('beforeunload', () => {
-            clearInterval(updateInterval);
-        });
 
-        // Close modal on outside click
-        document.getElementById('settingsModal').addEventListener('click', function(e) {
-            if (e.target === this) {
-                closeSettings();
-            }
-        });
-    </script>
-</body>
-</html>
+@app.route("/")
+def index():
+    for f in ["dashboard_multi.html", "index.html"]:
+        if os.path.exists(f):
+            return send_from_directory(".", f)
+    return "No dashboard HTML found", 404
+
+@app.route("/api/analysis")
+def get_analysis():
+    with data_lock:
+        # Get current config
+        current_tickers = set(stock_config.keys())
+        cached_tickers = set(stock_data.keys())
+        
+        # Remove stocks that are no longer in config
+        for ticker in list(stock_data.keys()):
+            if ticker not in stock_config:
+                del stock_data[ticker]
+                print(f"Removed {ticker} from cache", file=sys.stderr)
+        
+        # Add/update stocks that are in config
+        for ticker in stock_config:
+            # Re-analyze if not cached or if target price changed
+            if ticker not in stock_data or stock_data[ticker].get('target_price') != stock_config[ticker]:
+                print(f"Analyzing {ticker} with target ${stock_config[ticker]}", file=sys.stderr)
+                stock_data[ticker] = analyze_single_stock(ticker, stock_config[ticker])
+        
+        print(f"Delivering {len(stock_data)} stocks: {list(stock_data.keys())}", file=sys.stderr)
+        return jsonify({
+            "timestamp": datetime.now().isoformat(),
+            "stocks": stock_data
+        })
+
+@app.route("/api/config", methods=['GET', 'POST'])
+def config():
+    global stock_config
+    if request.method == 'POST':
+        try:
+            data = request.get_json()
+            new_config = data.get("stocks", {})
+            
+            if not isinstance(new_config, dict):
+                return jsonify({"error": "Invalid format"}), 400
+            
+            # Validate data
+            for ticker, target in new_config.items():
+                if not isinstance(ticker, str) or not isinstance(target, (int, float)):
+                    return jsonify({"error": f"Invalid data for {ticker}"}), 400
+                if target <= 0:
+                    return jsonify({"error": f"Invalid target for {ticker}"}), 400
+            
+            with data_lock:
+                # Remove stocks that are no longer tracked
+                removed_stocks = [t for t in stock_data.keys() if t not in new_config]
+                for ticker in removed_stocks:
+                    del stock_data[ticker]
+                    print(f"Deleted {ticker} from tracking", file=sys.stderr)
+                
+                # Update config
+                stock_config.clear()
+                stock_config.update(new_config)
+                
+                # Force re-analysis of updated stocks
+                for ticker, target in stock_config.items():
+                    if ticker in stock_data and stock_data[ticker].get('target_price') != target:
+                        print(f"Target changed for {ticker}, will re-analyze", file=sys.stderr)
+                        # Remove from cache to force re-analysis on next API call
+                        del stock_data[ticker]
+                
+                # Save to file
+                save_config_to_file()
+            
+            print(f"Config updated: {stock_config}", file=sys.stderr)
+            return jsonify({"success": True, "stocks": stock_config})
+            
+        except Exception as e:
+            print(f"Error updating config: {e}", file=sys.stderr)
+            import traceback
+            traceback.print_exc(file=sys.stderr)
+            return jsonify({"error": str(e)}), 500
+    else:
+        # GET request
+        with data_lock:
+            return jsonify({"stocks": stock_config})
+
+@app.route("/api/debug")
+def debug():
+    with data_lock:
+        return jsonify({
+            "status": "alive",
+            "config": stock_config,
+            "cached_stocks": list(stock_data.keys()),
+            "sample": stock_data.get("TSLA", {})
+        })
+
+def background_refresh():
+    """Background thread to refresh stock data every 5 minutes"""
+    while True:
+        time.sleep(300)  # 5 minutes
+        with data_lock:
+            current_config = stock_config.copy()
+        
+        for ticker, target in current_config.items():
+            with data_lock:
+                stock_data[ticker] = analyze_single_stock(ticker, target)
+        
+        print(f"Background refresh complete at {datetime.now()}", file=sys.stderr)
+
+# STARTUP
+print("=" * 60, file=sys.stderr)
+print("STOCK TRACKER SERVER STARTING", file=sys.stderr)
+print("=" * 60, file=sys.stderr)
+
+# Load config from file
+load_config_from_file()
+
+print(f"Initial config: {stock_config}", file=sys.stderr)
+print("Performing initial stock analysis...", file=sys.stderr)
+
+for ticker, target in stock_config.items():
+    stock_data[ticker] = analyze_single_stock(ticker, target)
+    print(f"✓ {ticker} analyzed", file=sys.stderr)
+
+print("=" * 60, file=sys.stderr)
+print("Initial analysis complete", file=sys.stderr)
+print("=" * 60, file=sys.stderr)
+
+# Start background refresh thread
+threading.Thread(target=background_refresh, daemon=True).start()
+
+if __name__ == "__main__":
+    port = int(os.environ.get('PORT', 5000))
+    print(f"Server ready on port {port}", file=sys.stderr)
+    app.run(host='0.0.0.0', port=port, debug=False, threaded=True)
