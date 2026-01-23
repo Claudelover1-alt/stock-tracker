@@ -680,13 +680,13 @@
 </head>
 <body>
     <!-- Settings Button -->
-    <button class="settings-button" onclick="openSettings()">⚙️ Settings</button>
+    <button class="settings-button" onclick="openSettings()">⚙ Settings</button>
 
     <!-- Settings Modal -->
     <div class="settings-modal" id="settingsModal">
         <div class="settings-panel">
             <div class="settings-header">
-                <div class="settings-title">⚙️ SETTINGS</div>
+                <div class="settings-title">⚙ SETTINGS</div>
                 <button class="close-button" onclick="closeSettings()">×</button>
             </div>
 
@@ -742,57 +742,86 @@
     </div>
     
     <script>
-        // Default configuration
-        let STOCK_CONFIG = {
-            'TSLA': 500.0,
-            'AAPL': 250.0,
-            'NVDA': 200.0,
-            'RCAT': 30.0
-        };
-        
+        // Configuration
+        let STOCK_CONFIG = {};
         let UPDATE_INTERVAL = 5000; // 5 seconds
         
         let updateInterval;
         let expandedStocks = new Set();
         let currentData = null;
         
-        // Load saved configuration from localStorage and backend
+        // Load configuration from backend on startup
         async function loadConfig() {
+            // Browser localStorage is the source of truth
             const savedConfig = localStorage.getItem('stockConfig');
             const savedInterval = localStorage.getItem('updateInterval');
             
             if (savedConfig) {
-                STOCK_CONFIG = JSON.parse(savedConfig);
+                try {
+                    STOCK_CONFIG = JSON.parse(savedConfig);
+                    console.log('✓ Loaded configuration from browser:', STOCK_CONFIG);
+                } catch (e) {
+                    console.error('Error parsing saved config:', e);
+                }
             }
             
             if (savedInterval) {
                 UPDATE_INTERVAL = parseInt(savedInterval);
             }
             
-            // Try to load config from backend
-            try {
-                const response = await fetch('/api/config');
-                if (response.ok) {
-                    const data = await response.json();
-                    if (data.stocks && Object.keys(data.stocks).length > 0) {
-                        STOCK_CONFIG = data.stocks;
-                        saveConfig(); // Save to localStorage
-                        console.log('Loaded configuration from server:', STOCK_CONFIG);
+            // Now sync our browser config to the server (in case server restarted)
+            if (Object.keys(STOCK_CONFIG).length > 0) {
+                try {
+                    console.log('Syncing browser config to server...');
+                    const response = await fetch('/api/config', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            stocks: STOCK_CONFIG,
+                            init: true  // Tell server this is initialization
+                        })
+                    });
+                    
+                    if (response.ok) {
+                        console.log('✓ Server initialized with browser config');
                     }
+                } catch (error) {
+                    console.error('Could not sync config to server:', error);
+                    // Not fatal - server will use its defaults
                 }
-            } catch (error) {
-                console.log('Could not load config from server, using local config');
+            } else {
+                // No browser config, load from server
+                try {
+                    const response = await fetch('/api/config');
+                    if (response.ok) {
+                        const data = await response.json();
+                        if (data.stocks && Object.keys(data.stocks).length > 0) {
+                            STOCK_CONFIG = data.stocks;
+                            localStorage.setItem('stockConfig', JSON.stringify(STOCK_CONFIG));
+                            console.log('✓ Loaded configuration from server:', STOCK_CONFIG);
+                        }
+                    }
+                } catch (error) {
+                    console.error('Error loading config from server:', error);
+                }
             }
         }
         
-        // Save configuration to localStorage
-        function saveConfig() {
+        // Save config to browser localStorage (PERSISTENT!)
+        function saveConfigToBrowser() {
             localStorage.setItem('stockConfig', JSON.stringify(STOCK_CONFIG));
+            console.log('✓ Config saved to browser localStorage');
+        }
+        
+        // Save interval to localStorage
+        function saveInterval() {
             localStorage.setItem('updateInterval', UPDATE_INTERVAL.toString());
         }
         
         // Open settings modal
-        function openSettings() {
+        async function openSettings() {
+            // Reload config from server first
+            await loadConfig();
             populateStockList();
             document.getElementById('updateIntervalInput').value = UPDATE_INTERVAL / 1000;
             document.getElementById('settingsModal').classList.add('active');
@@ -824,7 +853,7 @@
                                    data-ticker="${ticker}">
                         </div>
                     </div>
-                    <button class="delete-stock-btn" onclick="deleteStock('${ticker}')">🗑️ Delete</button>
+                    <button class="delete-stock-btn" onclick="deleteStock('${ticker}')">🗑 Delete</button>
                 `;
                 stockListEl.appendChild(stockItem);
             });
@@ -861,6 +890,7 @@
             if (confirm(`Remove ${ticker} from tracking?`)) {
                 delete STOCK_CONFIG[ticker];
                 populateStockList();
+                console.log('Deleted', ticker, 'from local config');
             }
         }
         
@@ -879,17 +909,19 @@
             const intervalSeconds = parseInt(document.getElementById('updateIntervalInput').value);
             if (intervalSeconds && intervalSeconds > 0) {
                 UPDATE_INTERVAL = intervalSeconds * 1000;
+                saveInterval();
                 
                 // Restart update interval
                 clearInterval(updateInterval);
                 updateInterval = setInterval(fetchAnalysis, UPDATE_INTERVAL);
             }
             
-            // Save to localStorage
-            saveConfig();
+            // CRITICAL: Save to browser localStorage FIRST (this is persistent!)
+            saveConfigToBrowser();
             
-            // Send configuration to backend
+            // Send configuration to backend (server may restart, but browser keeps it)
             try {
+                console.log('Sending config to server:', STOCK_CONFIG);
                 const response = await fetch('/api/config', {
                     method: 'POST',
                     headers: {
@@ -901,28 +933,32 @@
                 });
                 
                 if (!response.ok) {
-                    throw new Error('Failed to update server configuration');
+                    const errorText = await response.text();
+                    throw new Error(`Server returned ${response.status}: ${errorText}`);
                 }
                 
                 const result = await response.json();
-                console.log('Server configuration updated:', result);
+                console.log('Server configuration updated successfully:', result);
                 
                 // Show success message
-                alert('Settings saved! The tracker will update with new stocks shortly.');
+                if (result.persisted) {
+                    alert('✅ Settings saved and will persist across restarts!');
+                } else {
+                    alert('✅ Settings saved for this session.');
+                }
                 
             } catch (error) {
                 console.error('Error updating server config:', error);
-                alert('Settings saved locally, but could not sync with server. Changes will apply on next page load.');
+                alert('⚠️ Error saving settings to server: ' + error.message);
+                return; // Don't close modal on error
             }
             
-            // Close modal and refresh
+            // Close modal and force immediate refresh
             closeSettings();
             currentData = null; // Force full re-render
             
-            // Wait a moment for server to start analyzing
-            setTimeout(() => {
-                fetchAnalysis();
-            }, 2000);
+            // Immediate fetch
+            await fetchAnalysis();
         }
         
         async function fetchAnalysis() {
@@ -970,7 +1006,20 @@
         
         function updateDashboard(data) {
             const stocks = data.stocks;
+            const newTickers = Object.keys(stocks);
+            const currentTickers = Object.keys(currentData.stocks);
             
+            // Check if stocks were added or removed
+            const tickersChanged = JSON.stringify(newTickers.sort()) !== JSON.stringify(currentTickers.sort());
+            
+            if (tickersChanged) {
+                // Full re-render if tickers changed
+                console.log('Tickers changed, re-rendering dashboard');
+                renderDashboard(data);
+                return;
+            }
+            
+            // Update existing stock data
             Object.keys(stocks).forEach(ticker => {
                 const stockData = stocks[ticker];
                 const prob = stockData.probability.composite_probability;
@@ -987,6 +1036,7 @@
                 updateValue(`current-change-${ticker}`, 
                     `${stockData.statistics.return_1d >= 0 ? '+' : ''}${stockData.statistics.return_1d.toFixed(2)}%`);
                 
+                updateValue(`target-price-${ticker}`, `$${stockData.target_price.toFixed(2)}`);
                 updateValue(`target-distance-${ticker}`, 
                     `${distanceToTarget >= 0 ? '+' : ''}$${distanceToTarget.toFixed(2)}`);
                 
@@ -1046,7 +1096,7 @@
                         </div>
                         <div class="price-box">
                             <div class="price-label">Target</div>
-                            <div class="price-value">$${data.target_price.toFixed(2)}</div>
+                            <div class="price-value" id="target-price-${ticker}">$${data.target_price.toFixed(2)}</div>
                             <div class="price-change ${changeClass}" id="target-distance-${ticker}">
                                 ${distanceToTarget >= 0 ? '+' : ''}$${distanceToTarget.toFixed(2)}
                             </div>
@@ -1139,7 +1189,7 @@
         // Initialize app
         async function initApp() {
             await loadConfig();
-            fetchAnalysis();
+            await fetchAnalysis();
             updateInterval = setInterval(fetchAnalysis, UPDATE_INTERVAL);
         }
         
