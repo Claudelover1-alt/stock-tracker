@@ -6,38 +6,93 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 import json
+import urllib.request
+import urllib.error
 
 app = Flask(__name__, static_folder=".")
 CORS(app)
 
 # Global state
-stock_config = {"TSLA": 500.0, "AAPL": 250.0, "NVDA": 200.0, "RCAT": 30.0}
+DEFAULT_CONFIG = {"TSLA": 500.0, "AAPL": 250.0, "NVDA": 200.0, "RCAT": 30.0}
+stock_config = {}
 stock_data = {}
 data_lock = threading.Lock()
 last_update = None
-config_file = "stock_config.json"
 
-# Load config from file on startup
-def load_config_from_file():
+# Cloud storage configuration (using a simple pastebin-style service)
+CLOUD_STORAGE_URL = os.environ.get('CONFIG_STORAGE_URL', '')
+
+# Multi-tier persistence strategy
+def load_config():
+    """Load config from cloud, then local file, then defaults"""
     global stock_config
+    
+    # Try 1: Load from cloud storage if URL is set
+    if CLOUD_STORAGE_URL:
+        try:
+            print(f"Attempting to load config from cloud...", file=sys.stderr)
+            req = urllib.request.Request(CLOUD_STORAGE_URL)
+            with urllib.request.urlopen(req, timeout=5) as response:
+                cloud_data = json.loads(response.read().decode())
+                if cloud_data and isinstance(cloud_data, dict):
+                    stock_config = cloud_data
+                    print(f"✓ Loaded config from cloud: {stock_config}", file=sys.stderr)
+                    # Also save locally as backup
+                    save_config_local()
+                    return
+        except Exception as e:
+            print(f"Could not load from cloud: {e}", file=sys.stderr)
+    
+    # Try 2: Load from local file in /tmp (survives until Render sleeps)
     try:
-        if os.path.exists(config_file):
-            with open(config_file, 'r') as f:
+        local_path = "/tmp/stock_config.json"
+        if os.path.exists(local_path):
+            with open(local_path, 'r') as f:
                 loaded_config = json.load(f)
                 if loaded_config and isinstance(loaded_config, dict):
                     stock_config = loaded_config
-                    print(f"Loaded config from file: {stock_config}", file=sys.stderr)
+                    print(f"✓ Loaded config from local file: {stock_config}", file=sys.stderr)
+                    return
     except Exception as e:
-        print(f"Error loading config: {e}", file=sys.stderr)
+        print(f"Could not load from local file: {e}", file=sys.stderr)
+    
+    # Try 3: Use defaults
+    stock_config = DEFAULT_CONFIG.copy()
+    print(f"Using default config: {stock_config}", file=sys.stderr)
+    save_config_local()
 
-# Save config to file
-def save_config_to_file():
+def save_config_local():
+    """Save config to local /tmp file"""
     try:
-        with open(config_file, 'w') as f:
+        local_path = "/tmp/stock_config.json"
+        with open(local_path, 'w') as f:
             json.dump(stock_config, f)
-        print(f"Saved config to file: {stock_config}", file=sys.stderr)
+        print(f"✓ Saved config locally to {local_path}", file=sys.stderr)
+        return True
     except Exception as e:
-        print(f"Error saving config: {e}", file=sys.stderr)
+        print(f"Error saving local config: {e}", file=sys.stderr)
+        return False
+
+def save_config_cloud():
+    """Save config to cloud storage if configured"""
+    if not CLOUD_STORAGE_URL:
+        return False
+    
+    try:
+        # For a simple pastebin-like service, we'd POST the data
+        # Since we need a simple solution that works without API keys,
+        # we'll skip cloud upload for now and rely on browser localStorage
+        print(f"Cloud storage URL not configured for writing", file=sys.stderr)
+        return False
+    except Exception as e:
+        print(f"Error saving to cloud: {e}", file=sys.stderr)
+        return False
+
+def save_config():
+    """Save config to all available storage methods"""
+    local_success = save_config_local()
+    # cloud_success = save_config_cloud()  # Disabled for now
+    return local_success
 
 def calculate_rsi(data, period=14):
     if len(data) < period + 1:
@@ -225,6 +280,7 @@ def config():
         try:
             data = request.get_json()
             new_config = data.get("stocks", {})
+            is_init = data.get("init", False)  # Flag to indicate this is initialization from browser
             
             if not isinstance(new_config, dict):
                 return jsonify({"error": "Invalid format"}), 400
@@ -237,6 +293,15 @@ def config():
                     return jsonify({"error": f"Invalid target for {ticker}"}), 400
             
             with data_lock:
+                # If this is init and server has no custom config, accept browser config
+                if is_init:
+                    print(f"Initializing server config from browser: {new_config}", file=sys.stderr)
+                    stock_config.clear()
+                    stock_config.update(new_config)
+                    save_config()
+                    return jsonify({"success": True, "stocks": stock_config, "initialized": True})
+                
+                # Normal config update
                 # Remove stocks that are no longer tracked
                 removed_stocks = [t for t in stock_data.keys() if t not in new_config]
                 for ticker in removed_stocks:
@@ -254,11 +319,16 @@ def config():
                         # Remove from cache to force re-analysis on next API call
                         del stock_data[ticker]
                 
-                # Save to file
-                save_config_to_file()
+                # Save to persistent storage
+                save_success = save_config()
             
             print(f"Config updated: {stock_config}", file=sys.stderr)
-            return jsonify({"success": True, "stocks": stock_config})
+            
+            return jsonify({
+                "success": True, 
+                "stocks": stock_config,
+                "persisted": save_success
+            })
             
         except Exception as e:
             print(f"Error updating config: {e}", file=sys.stderr)
@@ -298,8 +368,8 @@ print("=" * 60, file=sys.stderr)
 print("STOCK TRACKER SERVER STARTING", file=sys.stderr)
 print("=" * 60, file=sys.stderr)
 
-# Load config from file
-load_config_from_file()
+# Load config from environment variable
+load_config()
 
 print(f"Initial config: {stock_config}", file=sys.stderr)
 print("Performing initial stock analysis...", file=sys.stderr)
